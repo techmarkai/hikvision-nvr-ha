@@ -41,12 +41,19 @@ startup, so after installing you get:
   button that opens the setup dialog right there;
 - the card available on any dashboard, with no Lovelace resource to add:
 
+Add it from **Add card → Hikvision** and pick everything from dropdowns — the
+NVR, which cameras to show, whether it opens on live or history, live quality
+and the grid width. No YAML, no entity ids to look up.
+
+The equivalent YAML, if you prefer it:
+
 ```yaml
 type: custom:hikvision-nvr-card
-columns: 4          # optional, thumbnail grid width
-default_mode: live  # or: playback
-# device: 192.168.1.222      # optional, defaults to the first NVR
-# channels: [1, 2, 4]        # optional, defaults to all
+device: DS-7608NI-…      # optional, defaults to the first NVR
+channels: [1, 2, 4]      # optional, defaults to all
+default_mode: live       # or: playback
+live_stream: 1           # 1 = main, 2 = sub
+columns: 4
 ```
 
 If the card does not appear right after an update, hard-refresh the browser

@@ -19,7 +19,7 @@ from .const import DOMAIN
 _LOGGER = logging.getLogger(__name__)
 
 # Bumping this busts the browser cache for both files.
-FRONTEND_VERSION = "1.1.0"
+FRONTEND_VERSION = "1.2.0"
 
 URL_BASE = f"/{DOMAIN}_frontend"
 CARD_URL = f"{URL_BASE}/hikvision-nvr-card.js?v={FRONTEND_VERSION}"

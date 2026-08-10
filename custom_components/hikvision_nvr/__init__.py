@@ -13,6 +13,7 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
+from homeassistant.helpers import device_registry as dr
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import async_register_api
@@ -21,6 +22,7 @@ from .const import (
     CONF_USE_SSL,
     CONF_VERIFY_SSL,
     DEFAULT_RTSP_PORT,
+    DOMAIN,
 )
 from .coordinator import HikvisionConfigEntry, HikvisionCoordinator
 from .frontend import async_setup_frontend
@@ -64,6 +66,22 @@ async def async_setup_entry(hass: HomeAssistant, entry: HikvisionConfigEntry) ->
     await coordinator.async_config_entry_first_refresh()
     entry.runtime_data = coordinator
     coordinator.start_event_listener()
+
+    # Register the NVR itself before the platforms register cameras that point
+    # at it with via_device -- HA warns (and from 2025.12 will fail) if a
+    # via_device target does not exist yet.
+    info = api.device_info
+    dr.async_get(hass).async_get_or_create(
+        config_entry_id=entry.entry_id,
+        identifiers={(DOMAIN, coordinator.device_id)},
+        connections={(dr.CONNECTION_NETWORK_MAC, info["mac"])} if info.get("mac") else set(),
+        name=info.get("name") or api.host,
+        manufacturer="Hikvision",
+        model=info.get("model"),
+        sw_version=info.get("firmware"),
+        serial_number=info.get("serial"),
+        configuration_url=api.base_url,
+    )
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options))

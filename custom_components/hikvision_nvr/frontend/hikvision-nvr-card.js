@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.0.0";
+const CARD_VERSION = "1.2.0";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -149,7 +149,7 @@ class HikvisionNvrCard extends HTMLElement {
   }
 
   setConfig(config) {
-    this._config = { columns: 3, default_mode: "live", ...config };
+    this._config = { columns: 3, default_mode: "live", live_stream: 1, ...config };
     this._mode = this._config.default_mode === "playback" ? "playback" : "live";
   }
 
@@ -302,7 +302,10 @@ class HikvisionNvrCard extends HTMLElement {
   }
 
   async _liveUrl() {
-    const data = await this._api(`${this._device.id}/${this._selected}/live`);
+    const stream = this._config.live_stream || 1;
+    const data = await this._api(
+      `${this._device.id}/${this._selected}/live?stream=${stream}`
+    );
     return data.hls_url;
   }
 
@@ -505,22 +508,163 @@ class HikvisionNvrCard extends HTMLElement {
   }
 }
 
+/**
+ * Visual editor. Everything is a dropdown, driven by <ha-form> so the widgets
+ * are Home Assistant's own and stay consistent with the rest of the UI.
+ * The NVR and camera lists are fetched live from the API, so there is nothing
+ * to type and nothing to remember.
+ */
 class HikvisionNvrCardEditor extends HTMLElement {
+  constructor() {
+    super();
+    this._devices = [];
+  }
+
   setConfig(config) {
-    this._config = config;
-    this.innerHTML = `
-      <div style="padding:8px;font-size:14px;line-height:1.6">
-        <b>Hikvision NVR card</b><br>
-        Options (YAML):<br>
-        <code>device</code> – NVR serial or IP. Defaults to the first one.<br>
-        <code>channels</code> – list of channel numbers. Defaults to all.<br>
-        <code>columns</code> – thumbnail grid columns (default 3).<br>
-        <code>default_mode</code> – <code>live</code> or <code>playback</code>.
-      </div>`;
+    this._config = { columns: 3, default_mode: "live", live_stream: 1, ...config };
+    this._render();
   }
 
   set hass(hass) {
+    const first = !this._hass;
     this._hass = hass;
+    if (first) this._load();
+    else this._render();
+  }
+
+  async _load() {
+    try {
+      const { devices } = await this._hass.callApi("GET", "hikvision_nvr/devices");
+      this._devices = devices;
+    } catch (err) {
+      this._error = err.message || String(err);
+    }
+    this._render();
+  }
+
+  get _device() {
+    return (
+      this._devices.find(
+        (d) => d.id === this._config?.device || d.host === this._config?.device
+      ) || this._devices[0]
+    );
+  }
+
+  _schema() {
+    const device = this._device;
+    const channels = device?.channels || [];
+    return [
+      {
+        name: "device",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: this._devices.map((d) => ({
+              value: d.id,
+              label: `${d.name} (${d.model || d.host})`,
+            })),
+          },
+        },
+      },
+      {
+        name: "channels",
+        selector: {
+          select: {
+            multiple: true,
+            mode: "list",
+            options: channels.map((c) => ({
+              value: String(c.id),
+              label: `${c.id} · ${c.name}${c.online ? "" : " (offline)"}`,
+            })),
+          },
+        },
+      },
+      {
+        name: "default_mode",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: "live", label: "Live view" },
+              { value: "playback", label: "History" },
+            ],
+          },
+        },
+      },
+      {
+        name: "live_stream",
+        selector: {
+          select: {
+            mode: "dropdown",
+            options: [
+              { value: 1, label: "Main stream — full resolution" },
+              { value: 2, label: "Sub stream — lighter, starts faster" },
+            ],
+          },
+        },
+      },
+      {
+        name: "columns",
+        selector: { number: { min: 1, max: 6, mode: "slider" } },
+      },
+    ];
+  }
+
+  _labels(schema) {
+    return {
+      device: "NVR",
+      channels: "Cameras to show",
+      default_mode: "Opens on",
+      live_stream: "Live quality",
+      columns: "Thumbnails per row",
+    }[schema.name];
+  }
+
+  _render() {
+    if (!this._hass || !this._config) return;
+    if (!this.querySelector("ha-form")) {
+      this.innerHTML = `<div class="hik-editor" style="padding:8px 0"></div>`;
+      const form = document.createElement("ha-form");
+      form.addEventListener("value-changed", (event) => {
+        const config = { ...this._config, ...event.detail.value };
+        // Selecting a different NVR invalidates the camera picks.
+        if (config.device !== this._config.device) delete config.channels;
+        this._config = config;
+        this.dispatchEvent(
+          new CustomEvent("config-changed", {
+            detail: { config: { type: "custom:hikvision-nvr-card", ...config } },
+            bubbles: true,
+            composed: true,
+          })
+        );
+        this._render();
+      });
+      this.querySelector(".hik-editor").appendChild(form);
+    }
+
+    if (this._error) {
+      this.querySelector(".hik-editor").insertAdjacentHTML(
+        "afterbegin",
+        `<div style="color:var(--error-color);font-size:13px;padding:8px">${esc(
+          this._error
+        )}</div>`
+      );
+      this._error = null;
+    }
+
+    const device = this._device;
+    const form = this.querySelector("ha-form");
+    form.hass = this._hass;
+    form.schema = this._schema();
+    form.computeLabel = (schema) => this._labels(schema);
+    form.data = {
+      ...this._config,
+      device: device?.id ?? this._config.device,
+      // Nothing selected means "all cameras" -- show that as all ticked.
+      channels: (
+        this._config.channels || (device?.channels || []).map((c) => c.id)
+      ).map(String),
+    };
   }
 }
 
@@ -529,13 +673,16 @@ class HikvisionNvrCardEditor extends HTMLElement {
 if (!customElements.get("hikvision-nvr-card")) {
   customElements.define("hikvision-nvr-card", HikvisionNvrCard);
   customElements.define("hikvision-nvr-card-editor", HikvisionNvrCardEditor);
+  // Alias: `type: custom:hikvision-card` resolves to the same card, so the
+  // shorter name people reach for first does not fail.
+  customElements.define("hikvision-card", class extends HikvisionNvrCard {});
 }
 
 window.customCards = window.customCards || [];
 if (!window.customCards.some((c) => c.type === "hikvision-nvr-card"))
   window.customCards.push({
   type: "hikvision-nvr-card",
-  name: "Hikvision NVR",
+  name: "Hikvision",
   description: "Live view and history playback for a Hikvision NVR",
   preview: true,
   documentationURL: "https://github.com/techmarkai/hikvision-nvr-ha",
