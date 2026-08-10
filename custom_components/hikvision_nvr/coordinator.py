@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections import deque
 from datetime import datetime
 from typing import Any
@@ -45,8 +46,18 @@ class HikvisionCoordinator(DataUpdateCoordinator[dict[str, Any]]):
 
     @property
     def device_id(self) -> str:
-        """Stable id for this NVR, used in entity ids and the REST API."""
+        """Stable id for this NVR. Used in entity unique_ids -- never change it."""
         return self.api.device_info.get("serial") or self.api.host
+
+    @property
+    def slug(self) -> str:
+        """URL-safe id, for the REST API and media-source identifiers.
+
+        Hikvision serials contain the model, so they contain a slash
+        ("DS-7608NI-K2/8P0820…"). Put that in a URL path and no route matches;
+        put it in a media-source identifier and splitting on "/" corrupts it.
+        """
+        return re.sub(r"[^A-Za-z0-9._-]", "-", self.device_id)
 
     async def _async_update_data(self) -> dict[str, Any]:
         try:

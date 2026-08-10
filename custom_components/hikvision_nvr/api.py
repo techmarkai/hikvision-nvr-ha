@@ -39,12 +39,12 @@ DATA_STREAMS = f"{DOMAIN}_playback_streams"
 
 
 def _coordinators(hass: HomeAssistant) -> dict[str, HikvisionCoordinator]:
-    """Every loaded NVR, keyed by its device id (serial number)."""
+    """Every loaded NVR, keyed by its URL-safe slug."""
     result = {}
     for entry in hass.config_entries.async_entries(DOMAIN):
         coordinator = getattr(entry, "runtime_data", None)
         if isinstance(coordinator, HikvisionCoordinator):
-            result[coordinator.device_id] = coordinator
+            result[coordinator.slug] = coordinator
     return result
 
 
@@ -52,9 +52,13 @@ def _get_coordinator(hass: HomeAssistant, device_id: str) -> HikvisionCoordinato
     coordinators = _coordinators(hass)
     if device_id in coordinators:
         return coordinators[device_id]
-    # Convenience: allow addressing by host or by title too.
+    # Convenience: allow addressing by raw serial, host or title too.
     for coordinator in coordinators.values():
-        if device_id in (coordinator.api.host, coordinator.config_entry.title):
+        if device_id in (
+            coordinator.device_id,
+            coordinator.api.host,
+            coordinator.config_entry.title,
+        ):
             return coordinator
     raise web.HTTPNotFound(reason=f"Unknown NVR '{device_id}'")
 
@@ -144,7 +148,7 @@ class DevicesView(_BaseView):
             info = coordinator.api.device_info
             devices.append(
                 {
-                    "id": coordinator.device_id,
+                    "id": coordinator.slug,
                     "name": coordinator.config_entry.title,
                     "host": coordinator.api.host,
                     "model": info.get("model"),
@@ -189,10 +193,10 @@ class ChannelsView(_BaseView):
                         "ptz": c.ptz,
                         "streams": c.streams,
                         "snapshot_url": (
-                            f"/api/hikvision_nvr/{coordinator.device_id}/{c.id}/snapshot"
+                            f"/api/hikvision_nvr/{coordinator.slug}/{c.id}/snapshot"
                         ),
                         "live_url": (
-                            f"/api/hikvision_nvr/{coordinator.device_id}/{c.id}/live"
+                            f"/api/hikvision_nvr/{coordinator.slug}/{c.id}/live"
                         ),
                     }
                     for c in coordinator.api.channels
@@ -246,7 +250,7 @@ class RecordingsView(_BaseView):
             offset=offset,
             event_type=request.query.get("event_type"),
         )
-        base = f"/api/hikvision_nvr/{coordinator.device_id}/{chan.id}"
+        base = f"/api/hikvision_nvr/{coordinator.slug}/{chan.id}"
         return self.json(
             {
                 "channel": chan.id,
@@ -354,7 +358,7 @@ class LiveView(_BaseView):
 
         source = coordinator.api.rtsp_url(chan.id, stream_id)
         stream = await _async_get_stream(
-            hass, f"live-{coordinator.device_id}-{chan.id}-{stream_id}", source
+            hass, f"live-{coordinator.slug}-{chan.id}-{stream_id}", source
         )
         return self.json(
             {
@@ -388,9 +392,9 @@ class PlaybackView(_BaseView):
             raise web.HTTPBadRequest(reason="playback range must not exceed 6 hours")
 
         source = coordinator.api.playback_rtsp_url(chan.id, start, end)
-        key = f"pb-{coordinator.device_id}-{chan.id}-{start.timestamp()}-{end.timestamp()}"
+        key = f"pb-{coordinator.slug}-{chan.id}-{start.timestamp()}-{end.timestamp()}"
         stream = await _async_get_stream(hass, key, source)
-        base = f"/api/hikvision_nvr/{coordinator.device_id}/{chan.id}"
+        base = f"/api/hikvision_nvr/{coordinator.slug}/{chan.id}"
         return self.json(
             {
                 "channel": chan.id,

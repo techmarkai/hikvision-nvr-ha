@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.2.0";
+const CARD_VERSION = "1.3.0";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -47,6 +47,20 @@ const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
   );
+
+/** Home Assistant's callApi rejects with an object, not an Error. */
+const errText = (err) => {
+  if (!err) return "unknown error";
+  if (typeof err === "string") return err;
+  const body = err.body?.message || err.body?.error || err.body;
+  return (
+    err.message ||
+    [err.status_code, typeof body === "string" ? body : err.error]
+      .filter(Boolean)
+      .join(" ") ||
+    JSON.stringify(err)
+  );
+};
 
 const pad = (n) => String(n).padStart(2, "0");
 const hhmm = (d) => `${pad(d.getHours())}:${pad(d.getMinutes())}`;
@@ -212,7 +226,7 @@ class HikvisionNvrCard extends HTMLElement {
       this._startSnapshots();
       if (this._mode === "playback") this._loadTimeline();
     } catch (err) {
-      this._error = err.message || String(err);
+      this._error = errText(err);
       this._loading = false;
       this._render();
     }
@@ -269,7 +283,7 @@ class HikvisionNvrCard extends HTMLElement {
       }));
       this._error = null;
     } catch (err) {
-      this._error = `Timeline failed: ${err.message || err}`;
+      this._error = `Timeline failed: ${errText(err)}`;
     }
     this._render();
   }
@@ -295,7 +309,7 @@ class HikvisionNvrCard extends HTMLElement {
       this._downloadUrl = data.download_url;
       this._error = null;
     } catch (err) {
-      this._error = `Playback failed: ${err.message || err}`;
+      this._error = `Playback failed: ${errText(err)}`;
       this._playbackUrl = null;
     }
     this._render();
@@ -468,7 +482,7 @@ class HikvisionNvrCard extends HTMLElement {
     const url =
       this._mode === "live"
         ? await this._liveUrl().catch((err) => {
-            this._error = `Live view failed: ${err.message || err}`;
+            this._error = `Live view failed: ${errText(err)}`;
             return null;
           })
         : this._playbackUrl;
@@ -537,7 +551,7 @@ class HikvisionNvrCardEditor extends HTMLElement {
       const { devices } = await this._hass.callApi("GET", "hikvision_nvr/devices");
       this._devices = devices;
     } catch (err) {
-      this._error = err.message || String(err);
+      this._error = errText(err);
     }
     this._render();
   }

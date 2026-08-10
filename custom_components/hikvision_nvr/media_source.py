@@ -52,7 +52,7 @@ class HikvisionMediaSource(MediaSource):
 
     def _coordinators(self) -> dict[str, HikvisionCoordinator]:
         return {
-            entry.runtime_data.device_id: entry.runtime_data
+            entry.runtime_data.slug: entry.runtime_data
             for entry in self.hass.config_entries.async_entries(DOMAIN)
             if isinstance(getattr(entry, "runtime_data", None), HikvisionCoordinator)
         }
@@ -126,21 +126,21 @@ class HikvisionMediaSource(MediaSource):
             "",
             "Hikvision NVR",
             children=[
-                self._node(coordinator.device_id, coordinator.config_entry.title)
+                self._node(coordinator.slug, coordinator.config_entry.title)
                 for coordinator in self._coordinators().values()
             ],
         )
 
     def _browse_channels(self, coordinator: HikvisionCoordinator) -> BrowseMediaSource:
         return self._node(
-            coordinator.device_id,
+            coordinator.slug,
             coordinator.config_entry.title,
             children=[
                 self._node(
-                    f"{coordinator.device_id}/{channel.id}",
+                    f"{coordinator.slug}/{channel.id}",
                     channel.name,
                     thumbnail=(
-                        f"/api/hikvision_nvr/{coordinator.device_id}/{channel.id}/snapshot"
+                        f"/api/hikvision_nvr/{coordinator.slug}/{channel.id}/snapshot"
                     ),
                 )
                 for channel in coordinator.api.channels
@@ -157,11 +157,11 @@ class HikvisionMediaSource(MediaSource):
             (c.name for c in coordinator.api.channels if c.id == channel), str(channel)
         )
         return self._node(
-            f"{coordinator.device_id}/{channel}",
+            f"{coordinator.slug}/{channel}",
             name,
             children=[
                 self._node(
-                    f"{coordinator.device_id}/{channel}/{day}",
+                    f"{coordinator.slug}/{channel}/{day}",
                     "Today" if day == today else day.strftime("%a %d %b %Y"),
                 )
                 for day in (today - timedelta(days=offset) for offset in range(MAX_DAYS))
@@ -198,12 +198,12 @@ class HikvisionMediaSource(MediaSource):
             )
             children.append(
                 self._node(
-                    f"{coordinator.device_id}/{channel}"
+                    f"{coordinator.slug}/{channel}"
                     f"/{recording.start.timestamp()}/{recording.end.timestamp()}",
                     label,
                     playable=True,
                 )
             )
         return self._node(
-            f"{coordinator.device_id}/{channel}/{day}", day, children=children
+            f"{coordinator.slug}/{channel}/{day}", day, children=children
         )

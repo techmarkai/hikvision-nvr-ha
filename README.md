@@ -14,6 +14,7 @@ Verified against a **DS-7608NI-K2/8P, firmware V4.40.015, 8 channels**.
 | **Media browser** | Recordings appear under **Media → Hikvision NVR → camera → day**. |
 | **Events** | Motion, line crossing, intrusion, tamper, video loss, disk errors — pushed over ISAPI's alert stream, not polled. |
 | **Storage** | Per-disk usage and free-space sensors. |
+| **Camera health** | A connectivity sensor per channel, from the NVR's own per-channel probe — truer than an ICMP ping, and it works even when the cameras sit on the NVR's PoE subnet. |
 | **Sidebar panel** | A **Cameras** page with the whole system in it, and an **Add NVR** button — IP, username and password, all from the GUI. |
 | **REST API** | `/api/hikvision_nvr/…` for third-party mobile apps, using ordinary Home Assistant tokens. |
 | **Services** | Search recordings, export a clip to MP4, PTZ, reboot. |

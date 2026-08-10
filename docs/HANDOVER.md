@@ -70,7 +70,10 @@ Things the firmware does that the code exists to absorb:
 4. **Not every channel has both streams.** Requesting a non-existent sub-stream
    fails the stream outright, so both camera and API clamp to what the channel
    actually reports.
-5. **The NVR clock is its own.** Event freshness is stamped on receipt, not from
+5. **The serial number contains a slash** (`DS-7608NI-K2/8P0820…`). It is fine
+   as an entity unique_id, but it cannot go in a URL path or a media-source
+   identifier -- `coordinator.slug` is the sanitised form used for both.
+6. **The NVR clock is its own.** Event freshness is stamped on receipt, not from
    `<dateTime>`, so a drifting NVR clock cannot make every motion event look
    expired.
 

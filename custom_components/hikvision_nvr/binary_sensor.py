@@ -6,6 +6,7 @@ from homeassistant.components.binary_sensor import (
     BinarySensorDeviceClass,
     BinarySensorEntity,
 )
+from homeassistant.const import EntityCategory
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -35,8 +36,9 @@ async def async_setup_entry(
     }
 
     known: set[tuple[int, str]] = set()
-    entities = []
+    entities: list[BinarySensorEntity] = []
     for channel in channels.values():
+        entities.append(HikvisionChannelOnline(coordinator, channel))
         for event_type in BASE_EVENTS:
             known.add((channel.id, event_type))
             entities.append(HikvisionBinarySensor(coordinator, channel, event_type))
@@ -110,3 +112,33 @@ class HikvisionBinarySensor(HikvisionEntity, BinarySensorEntity):
                 EVENT_AUTO_OFF.total_seconds() + 1,
                 lambda _now: self.async_write_ha_state(),
             )
+
+
+class HikvisionChannelOnline(HikvisionEntity, BinarySensorEntity):
+    """Is this camera actually reachable?
+
+    The NVR probes every channel itself and reports the result, which is a
+    truer answer than an ICMP ping from Home Assistant: a camera can answer
+    ping while its stream is dead, and it may sit on a PoE subnet Home
+    Assistant cannot reach at all.
+    """
+
+    _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_name = "Connectivity"
+
+    def __init__(self, coordinator: HikvisionCoordinator, channel: Channel) -> None:
+        super().__init__(coordinator, channel)
+        self._attr_unique_id = f"{coordinator.device_id}_{channel.id}_online"
+
+    @property
+    def is_on(self) -> bool:
+        return bool(self.coordinator.data["channels"].get(self.channel.id, False))
+
+    @property
+    def extra_state_attributes(self) -> dict[str, object]:
+        return {
+            "channel": self.channel.id,
+            "camera_ip": self.channel.ip_address,
+            "streams": self.channel.streams,
+        }

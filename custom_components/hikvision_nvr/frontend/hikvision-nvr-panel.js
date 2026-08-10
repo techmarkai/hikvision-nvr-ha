@@ -111,8 +111,9 @@ class HikvisionNvrPanel extends HTMLElement {
       const { devices } = await this._hass.callApi("GET", "hikvision_nvr/devices");
       this._devices = devices;
     } catch (err) {
+      const detail = err?.message || err?.body?.message || err?.error || JSON.stringify(err);
       body.innerHTML = `<div class="empty"><h2>Could not reach the API</h2><p>${esc(
-        err.message || err
+        detail
       )}</p></div>`;
       return;
     }
