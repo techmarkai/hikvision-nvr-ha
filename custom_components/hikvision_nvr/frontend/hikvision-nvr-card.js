@@ -524,11 +524,16 @@ class HikvisionNvrCardEditor extends HTMLElement {
   }
 }
 
-customElements.define("hikvision-nvr-card", HikvisionNvrCard);
-customElements.define("hikvision-nvr-card-editor", HikvisionNvrCardEditor);
+// The panel imports this module under a different URL than the global
+// add_extra_js_url load, so it can execute twice. Defining twice throws.
+if (!customElements.get("hikvision-nvr-card")) {
+  customElements.define("hikvision-nvr-card", HikvisionNvrCard);
+  customElements.define("hikvision-nvr-card-editor", HikvisionNvrCardEditor);
+}
 
 window.customCards = window.customCards || [];
-window.customCards.push({
+if (!window.customCards.some((c) => c.type === "hikvision-nvr-card"))
+  window.customCards.push({
   type: "hikvision-nvr-card",
   name: "Hikvision NVR",
   description: "Live view and history playback for a Hikvision NVR",

@@ -23,6 +23,7 @@ from .const import (
     DEFAULT_RTSP_PORT,
 )
 from .coordinator import HikvisionConfigEntry, HikvisionCoordinator
+from .frontend import async_setup_frontend
 from .isapi import AuthError, ConnectionFailed, HikvisionError, HikvisionISAPI
 from .services import async_setup_services
 
@@ -32,9 +33,10 @@ PLATFORMS = [Platform.BINARY_SENSOR, Platform.CAMERA, Platform.SENSOR]
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
-    """Register the REST API and services once, not per entry."""
+    """Register the REST API, services and frontend once, not per entry."""
     async_register_api(hass)
     async_setup_services(hass)
+    await async_setup_frontend(hass)
     return True
 
 
