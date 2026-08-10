@@ -1,0 +1,15 @@
+{
+  "domain": "hikvision_nvr",
+  "name": "Hikvision NVR",
+  "version": "1.0.0",
+  "documentation": "https://github.com/techmarkai/hikvision-nvr-ha",
+  "issue_tracker": "https://github.com/techmarkai/hikvision-nvr-ha/issues",
+  "codeowners": ["@techmarkai"],
+  "config_flow": true,
+  "iot_class": "local_push",
+  "integration_type": "hub",
+  "dependencies": ["http", "stream", "ffmpeg"],
+  "after_dependencies": ["media_source"],
+  "requirements": [],
+  "quality_scale": "platinum"
+}

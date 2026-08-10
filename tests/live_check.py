@@ -1,0 +1,111 @@
+"""Live self-check against a real NVR. No framework, no fixtures.
+
+    python tests/live_check.py 192.168.1.222 admin PASSWORD
+
+Fails loudly if any ISAPI surface the integration depends on breaks.
+"""
+
+from __future__ import annotations
+
+import asyncio
+import sys
+from datetime import datetime, timedelta, timezone
+from pathlib import Path
+
+import importlib.util  # noqa: E402
+
+import aiohttp  # noqa: E402
+
+# Load isapi.py directly: importing it as part of the package would pull in
+# Home Assistant, and the whole point of this check is that it does not need it.
+_SPEC = importlib.util.spec_from_file_location(
+    "hikvision_isapi",
+    Path(__file__).resolve().parents[1]
+    / "custom_components"
+    / "hikvision_nvr"
+    / "isapi.py",
+)
+_MODULE = importlib.util.module_from_spec(_SPEC)
+sys.modules[_SPEC.name] = _MODULE  # dataclasses resolves annotations through this
+_SPEC.loader.exec_module(_MODULE)
+HikvisionISAPI = _MODULE.HikvisionISAPI
+
+
+async def main(host: str, user: str, password: str) -> None:
+    async with aiohttp.ClientSession() as session:
+        api = HikvisionISAPI(session, host, user, password)
+
+        await api.async_connect()
+        info = api.device_info
+        assert info["model"], "no model reported"
+        assert info["serial"], "no serial reported"
+        print(f"device      : {info['name']} / {info['model']} / fw {info['firmware']}")
+
+        assert api.channels, "no channels discovered"
+        for channel in api.channels:
+            print(
+                f"channel {channel.id:>2}  : {channel.name!r:28} "
+                f"online={channel.online} streams={channel.streams} ptz={channel.ptz}"
+            )
+        first = next((c for c in api.channels if c.online), api.channels[0])
+
+        jpeg = await api.async_snapshot(first.id)
+        assert jpeg[:2] == b"\xff\xd8", "snapshot is not a JPEG"
+        print(f"snapshot    : ch{first.id} {len(jpeg)} bytes JPEG OK")
+
+        disks = await api.async_get_storage()
+        assert disks, "no storage reported"
+        for disk in disks:
+            print(
+                f"disk {disk['id']}      : {disk['status']} "
+                f"{disk['used_percent']}% used of {disk['capacity_mb']} MB"
+            )
+
+        end = datetime.now(timezone.utc)
+        start = end - timedelta(days=1)
+        recordings, total = await api.async_search_recordings(
+            first.id, start, end, max_results=60
+        )
+        assert recordings, "no recordings found in the last 24h"
+        assert total >= len(recordings)
+        # Paging must actually advance, not repeat page one.
+        assert len({r.start for r in recordings}) == len(recordings), "paging repeated"
+        assert all(r.end > r.start for r in recordings), "bad segment bounds"
+        print(
+            f"playback    : {len(recordings)} of {total} segments, "
+            f"first {recordings[0].start:%Y-%m-%d %H:%M} "
+            f"({recordings[0].duration}s, {recordings[0].event_type})"
+        )
+
+        rtsp = api.playback_rtsp_url(
+            first.id, recordings[0].start, recordings[0].end, credentials=False
+        )
+        assert "starttime=" in rtsp and "/tracks/" in rtsp
+        print(f"rtsp back   : {rtsp}")
+        print(f"rtsp live   : {api.rtsp_url(first.id, 1, credentials=False)}")
+
+        received = 0
+        async for chunk in api.async_download_stream(recordings[0]):
+            received += len(chunk)
+            if received > 200_000:
+                break
+        assert received > 100_000, "download produced almost nothing"
+        print(f"download    : {received} bytes streamed OK")
+
+        events = []
+        try:
+            async with asyncio.timeout(12):
+                async for event in api.async_listen_events():
+                    events.append(event)
+                    if len(events) >= 3:
+                        break
+        except TimeoutError:
+            pass
+        assert events, "alert stream produced no events in 12s"
+        print(f"events      : {len(events)} received, e.g. {events[0]}")
+
+        print("\nALL CHECKS PASSED")
+
+
+if __name__ == "__main__":
+    asyncio.run(main(*sys.argv[1:4]))

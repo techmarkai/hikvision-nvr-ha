@@ -1,0 +1,118 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Connect to your Hikvision NVR",
+        "description": "Use a device account with remote access rights. Operator is enough for live view and playback; admin is only needed for reboot.",
+        "data": {
+          "host": "Host or IP address",
+          "username": "Username",
+          "password": "Password",
+          "port": "HTTP port",
+          "rtsp_port": "RTSP port",
+          "use_ssl": "Use HTTPS",
+          "verify_ssl": "Verify the certificate"
+        }
+      }
+    },
+    "error": {
+      "cannot_connect": "Cannot reach the NVR. Check the host, the HTTP port, and that ISAPI/Hikvision-CGI is enabled.",
+      "invalid_auth": "Wrong username or password, or the account is locked out after too many failed attempts.",
+      "unknown": "Unexpected error. Check the Home Assistant log."
+    },
+    "abort": {
+      "already_configured": "This NVR is already added.",
+      "wrong_device": "Those credentials belong to a different NVR.",
+      "reauth_successful": "Credentials updated.",
+      "reconfigure_successful": "Connection updated."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hikvision NVR options",
+        "data": {
+          "channels": "Channels to expose",
+          "stream": "Live view stream",
+          "snapshot_stream": "Snapshot stream"
+        },
+        "data_description": {
+          "stream": "Main stream is full resolution. Sub stream is much lighter and starts faster.",
+          "snapshot_stream": "Sub stream keeps thumbnails cheap on large systems."
+        }
+      }
+    }
+  },
+  "services": {
+    "search_recordings": {
+      "name": "Search recordings",
+      "description": "Search the NVR's recordings and return the matching segments.",
+      "fields": {
+        "device_id": {
+          "name": "NVR",
+          "description": "Serial, host, or config entry id. Optional with a single NVR."
+        },
+        "channel": { "name": "Channel", "description": "Camera channel number." },
+        "start_time": { "name": "Start", "description": "Defaults to 24 hours ago." },
+        "end_time": { "name": "End", "description": "Defaults to now." },
+        "event_type": {
+          "name": "Event type",
+          "description": "Only return segments of this type, e.g. motion."
+        },
+        "limit": { "name": "Limit", "description": "Maximum segments to return." }
+      }
+    },
+    "export_recording": {
+      "name": "Export recording",
+      "description": "Copy a time range from the NVR into an MP4 under your media folder.",
+      "fields": {
+        "device_id": { "name": "NVR", "description": "Serial, host, or config entry id." },
+        "channel": { "name": "Channel", "description": "Camera channel number." },
+        "start_time": { "name": "Start", "description": "Start of the range." },
+        "end_time": { "name": "End", "description": "End of the range. Max 2 hours." },
+        "filename": {
+          "name": "Filename",
+          "description": "File name only, no path. Defaults to a timestamped name."
+        }
+      }
+    },
+    "ptz": {
+      "name": "PTZ",
+      "description": "Move a PTZ camera, or send it to a preset.",
+      "fields": {
+        "device_id": { "name": "NVR", "description": "Serial, host, or config entry id." },
+        "channel": { "name": "Channel", "description": "Camera channel number." },
+        "pan": { "name": "Pan", "description": "-100 to 100." },
+        "tilt": { "name": "Tilt", "description": "-100 to 100." },
+        "zoom": { "name": "Zoom", "description": "-100 to 100." },
+        "preset": { "name": "Preset", "description": "Go to this preset instead of moving." },
+        "duration": { "name": "Duration", "description": "How long to move before stopping." }
+      }
+    },
+    "reboot": {
+      "name": "Reboot",
+      "description": "Reboot the NVR. Requires an admin account.",
+      "fields": {
+        "device_id": { "name": "NVR", "description": "Serial, host, or config entry id." }
+      }
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "vmd": { "name": "Motion" },
+      "linedetection": { "name": "Line crossing" },
+      "fielddetection": { "name": "Intrusion" },
+      "facedetection": { "name": "Face detected" },
+      "videoloss": { "name": "Video loss" },
+      "tamperdetection": { "name": "Tampering" },
+      "shelteralarm": { "name": "Camera covered" },
+      "diskfull": { "name": "Disk full" },
+      "diskerror": { "name": "Disk error" },
+      "nicbroken": { "name": "Network down" },
+      "ipconflict": { "name": "IP conflict" },
+      "illaccess": { "name": "Illegal login" },
+      "pir": { "name": "PIR" },
+      "io": { "name": "Alarm input" }
+    }
+  }
+}

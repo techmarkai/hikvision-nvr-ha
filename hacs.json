@@ -1,0 +1,8 @@
+{
+  "name": "Hikvision NVR",
+  "content_in_root": false,
+  "render_readme": true,
+  "homeassistant": "2025.2.0",
+  "zip_release": false,
+  "filename": "hikvision_nvr.zip"
+}

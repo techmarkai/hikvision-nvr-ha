@@ -1,0 +1,591 @@
+"""REST API for third-party apps.
+
+Everything lives under ``/api/hikvision_nvr/`` and uses Home Assistant's own
+authentication -- a long-lived access token or an OAuth bearer token in the
+``Authorization`` header, exactly like ``/api/states``. No separate account
+system, no separate permission model.
+
+See docs/API.md for the full contract.
+"""
+
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timedelta
+from typing import Any
+
+from aiohttp import web
+from homeassistant.components.http import HomeAssistantView
+from homeassistant.components.stream import Stream, create_stream
+from homeassistant.components.stream.const import HLS_PROVIDER
+from homeassistant.components.stream.core import Orientation
+from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers.event import async_call_later
+from homeassistant.util import dt as dt_util
+
+from .const import DOMAIN
+from .coordinator import HikvisionCoordinator
+from .isapi import AuthError, HikvisionError
+
+_LOGGER = logging.getLogger(__name__)
+
+# Playback streams are torn down this long after the last request for them.
+STREAM_IDLE = timedelta(minutes=5)
+MAX_PLAYBACK_STREAMS = 8
+DATA_STREAMS = f"{DOMAIN}_playback_streams"
+
+
+# --------------------------------------------------------------------- utils
+
+
+def _coordinators(hass: HomeAssistant) -> dict[str, HikvisionCoordinator]:
+    """Every loaded NVR, keyed by its device id (serial number)."""
+    result = {}
+    for entry in hass.config_entries.async_entries(DOMAIN):
+        coordinator = getattr(entry, "runtime_data", None)
+        if isinstance(coordinator, HikvisionCoordinator):
+            result[coordinator.device_id] = coordinator
+    return result
+
+
+def _get_coordinator(hass: HomeAssistant, device_id: str) -> HikvisionCoordinator:
+    coordinators = _coordinators(hass)
+    if device_id in coordinators:
+        return coordinators[device_id]
+    # Convenience: allow addressing by host or by title too.
+    for coordinator in coordinators.values():
+        if device_id in (coordinator.api.host, coordinator.config_entry.title):
+            return coordinator
+    raise web.HTTPNotFound(reason=f"Unknown NVR '{device_id}'")
+
+
+def _get_channel(coordinator: HikvisionCoordinator, channel_id: str):
+    try:
+        wanted = int(channel_id)
+    except ValueError:
+        raise web.HTTPBadRequest(reason="channel must be an integer") from None
+    channel = next((c for c in coordinator.api.channels if c.id == wanted), None)
+    if channel is None:
+        raise web.HTTPNotFound(reason=f"Unknown channel {channel_id}")
+    return channel
+
+
+def _time_range(request: web.Request) -> tuple[datetime, datetime]:
+    """Parse ?start=&end=, defaulting to the last 24 hours.
+
+    Accepts ISO 8601 (with or without offset -- naive means the HA timezone)
+    or a Unix epoch in seconds.
+    """
+
+    def parse(value: str | None, default: datetime) -> datetime:
+        if not value:
+            return default
+        if value.isdigit():
+            return datetime.fromtimestamp(int(value), dt_util.UTC)
+        parsed = dt_util.parse_datetime(value)
+        if parsed is None:
+            raise web.HTTPBadRequest(reason=f"Cannot parse time '{value}'")
+        return dt_util.as_utc(parsed)
+
+    now = dt_util.utcnow()
+    start = parse(request.query.get("start"), now - timedelta(days=1))
+    end = parse(request.query.get("end"), now)
+    if end <= start:
+        raise web.HTTPBadRequest(reason="end must be after start")
+    if end - start > timedelta(days=31):
+        raise web.HTTPBadRequest(reason="range must not exceed 31 days")
+    return start, end
+
+
+def _int_param(request: web.Request, name: str, default: int, maximum: int) -> int:
+    raw = request.query.get(name)
+    if raw is None:
+        return default
+    try:
+        return max(0, min(int(raw), maximum))
+    except ValueError:
+        raise web.HTTPBadRequest(reason=f"{name} must be an integer") from None
+
+
+def _handle_errors(func):
+    """Turn client exceptions into honest HTTP statuses."""
+
+    async def wrapper(self, request: web.Request, *args, **kwargs):
+        try:
+            return await func(self, request, *args, **kwargs)
+        except web.HTTPException:
+            raise
+        except AuthError as err:
+            raise web.HTTPBadGateway(reason=f"NVR rejected credentials: {err}") from err
+        except HikvisionError as err:
+            raise web.HTTPBadGateway(reason=str(err)) from err
+
+    wrapper.__name__ = func.__name__
+    return wrapper
+
+
+# ------------------------------------------------------------------- views
+
+
+class _BaseView(HomeAssistantView):
+    requires_auth = True
+
+
+class DevicesView(_BaseView):
+    """GET /api/hikvision_nvr/devices"""
+
+    url = "/api/hikvision_nvr/devices"
+    name = "api:hikvision_nvr:devices"
+
+    async def get(self, request: web.Request) -> web.Response:
+        hass = request.app["hass"]
+        devices = []
+        for coordinator in _coordinators(hass).values():
+            info = coordinator.api.device_info
+            devices.append(
+                {
+                    "id": coordinator.device_id,
+                    "name": coordinator.config_entry.title,
+                    "host": coordinator.api.host,
+                    "model": info.get("model"),
+                    "firmware": info.get("firmware"),
+                    "serial": info.get("serial"),
+                    "mac": info.get("mac"),
+                    "available": coordinator.last_update_success,
+                    "storage": coordinator.data.get("storage", []),
+                    "channels": [
+                        {
+                            "id": c.id,
+                            "name": c.name,
+                            "online": c.online,
+                            "ptz": c.ptz,
+                            "streams": c.streams,
+                            "ip_address": c.ip_address,
+                            "entity_id": f"camera.{c.name.lower().replace(' ', '_')}",
+                        }
+                        for c in coordinator.api.channels
+                    ],
+                }
+            )
+        return self.json({"devices": devices})
+
+
+class ChannelsView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/channels"""
+
+    url = "/api/hikvision_nvr/{device_id}/channels"
+    name = "api:hikvision_nvr:channels"
+
+    @_handle_errors
+    async def get(self, request: web.Request, device_id: str) -> web.Response:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        return self.json(
+            {
+                "channels": [
+                    {
+                        "id": c.id,
+                        "name": c.name,
+                        "online": c.online,
+                        "ptz": c.ptz,
+                        "streams": c.streams,
+                        "snapshot_url": (
+                            f"/api/hikvision_nvr/{coordinator.device_id}/{c.id}/snapshot"
+                        ),
+                        "live_url": (
+                            f"/api/hikvision_nvr/{coordinator.device_id}/{c.id}/live"
+                        ),
+                    }
+                    for c in coordinator.api.channels
+                ]
+            }
+        )
+
+
+class SnapshotView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/snapshot"""
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/snapshot"
+    name = "api:hikvision_nvr:snapshot"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.Response:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        chan = _get_channel(coordinator, channel)
+        stream = _int_param(request, "stream", 2, 2) or 2
+        image = await coordinator.api.async_snapshot(chan.id, stream)
+        return web.Response(
+            body=image,
+            content_type="image/jpeg",
+            headers={"Cache-Control": "no-store"},
+        )
+
+
+class RecordingsView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/recordings"""
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/recordings"
+    name = "api:hikvision_nvr:recordings"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.Response:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        chan = _get_channel(coordinator, channel)
+        start, end = _time_range(request)
+        limit = _int_param(request, "limit", 100, 1000)
+        offset = _int_param(request, "offset", 0, 100000)
+
+        recordings, total = await coordinator.api.async_search_recordings(
+            chan.id,
+            start,
+            end,
+            max_results=limit,
+            offset=offset,
+            event_type=request.query.get("event_type"),
+        )
+        base = f"/api/hikvision_nvr/{coordinator.device_id}/{chan.id}"
+        return self.json(
+            {
+                "channel": chan.id,
+                "name": chan.name,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "total": total,
+                "count": len(recordings),
+                "offset": offset,
+                "recordings": [
+                    {
+                        **recording.as_dict(),
+                        "playback_url": (
+                            f"{base}/playback?start={recording.start.isoformat()}"
+                            f"&end={recording.end.isoformat()}"
+                        ),
+                        "download_url": (
+                            f"{base}/download?start={recording.start.isoformat()}"
+                            f"&end={recording.end.isoformat()}"
+                        ),
+                    }
+                    for recording in recordings
+                ],
+            }
+        )
+
+
+class TimelineView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/timeline
+
+    Same data as /recordings, collapsed into contiguous blocks -- what a
+    scrubber actually needs. Adjacent segments less than ``gap`` seconds apart
+    are merged so a day of motion clips becomes a handful of bars.
+    """
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/timeline"
+    name = "api:hikvision_nvr:timeline"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.Response:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        chan = _get_channel(coordinator, channel)
+        start, end = _time_range(request)
+        gap = _int_param(request, "gap", 60, 3600)
+
+        recordings, total = await coordinator.api.async_search_recordings(
+            chan.id, start, end, max_results=1000
+        )
+        blocks: list[dict[str, Any]] = []
+        for recording in sorted(recordings, key=lambda r: r.start):
+            if blocks and (
+                recording.start - dt_util.parse_datetime(blocks[-1]["end"])
+            ) <= timedelta(seconds=gap):
+                blocks[-1]["end"] = recording.end.isoformat()
+                blocks[-1]["segments"] += 1
+                if recording.event_type:
+                    blocks[-1]["event_types"] = sorted(
+                        set(blocks[-1]["event_types"]) | {recording.event_type}
+                    )
+                continue
+            blocks.append(
+                {
+                    "start": recording.start.isoformat(),
+                    "end": recording.end.isoformat(),
+                    "segments": 1,
+                    "event_types": [recording.event_type] if recording.event_type else [],
+                }
+            )
+        for block in blocks:
+            block["duration"] = int(
+                (
+                    dt_util.parse_datetime(block["end"])
+                    - dt_util.parse_datetime(block["start"])
+                ).total_seconds()
+            )
+        return self.json(
+            {
+                "channel": chan.id,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "segments": total,
+                "blocks": blocks,
+            }
+        )
+
+
+class LiveView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/live -> HLS URL."""
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/live"
+    name = "api:hikvision_nvr:live"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.Response:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass, device_id)
+        chan = _get_channel(coordinator, channel)
+        stream_id = _int_param(request, "stream", 1, 2) or 1
+        if stream_id not in chan.streams:
+            stream_id = chan.streams[0]
+
+        source = coordinator.api.rtsp_url(chan.id, stream_id)
+        stream = await _async_get_stream(
+            hass, f"live-{coordinator.device_id}-{chan.id}-{stream_id}", source
+        )
+        return self.json(
+            {
+                "channel": chan.id,
+                "stream": stream_id,
+                "hls_url": stream.endpoint_url(HLS_PROVIDER),
+                # Direct RTSP, credentials stripped -- for apps with their own
+                # player that can supply the login itself.
+                "rtsp_url": coordinator.api.rtsp_url(
+                    chan.id, stream_id, credentials=False
+                ),
+            }
+        )
+
+
+class PlaybackView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/playback -> HLS URL."""
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/playback"
+    name = "api:hikvision_nvr:playback"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.Response:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass, device_id)
+        chan = _get_channel(coordinator, channel)
+        start, end = _time_range(request)
+        if end - start > timedelta(hours=6):
+            raise web.HTTPBadRequest(reason="playback range must not exceed 6 hours")
+
+        source = coordinator.api.playback_rtsp_url(chan.id, start, end)
+        key = f"pb-{coordinator.device_id}-{chan.id}-{start.timestamp()}-{end.timestamp()}"
+        stream = await _async_get_stream(hass, key, source)
+        base = f"/api/hikvision_nvr/{coordinator.device_id}/{chan.id}"
+        return self.json(
+            {
+                "channel": chan.id,
+                "start": start.isoformat(),
+                "end": end.isoformat(),
+                "duration": int((end - start).total_seconds()),
+                "hls_url": stream.endpoint_url(HLS_PROVIDER),
+                "download_url": (
+                    f"{base}/download?start={start.isoformat()}&end={end.isoformat()}"
+                ),
+                "rtsp_url": coordinator.api.playback_rtsp_url(
+                    chan.id, start, end, credentials=False
+                ),
+            }
+        )
+
+
+class DownloadView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/download -> video bytes.
+
+    Streams straight off the NVR's disks without buffering in Home Assistant.
+    """
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/download"
+    name = "api:hikvision_nvr:download"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.StreamResponse:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        chan = _get_channel(coordinator, channel)
+        start, end = _time_range(request)
+        if end - start > timedelta(hours=2):
+            raise web.HTTPBadRequest(reason="download range must not exceed 2 hours")
+
+        uri = coordinator.api.playback_rtsp_url(chan.id, start, end, credentials=False)
+        filename = (
+            f"{chan.name.replace(' ', '_')}_{start:%Y%m%d_%H%M%S}"
+            f"-{end:%H%M%S}.mp4"
+        )
+        response = web.StreamResponse(
+            headers={
+                "Content-Type": "video/mp4",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            }
+        )
+        await response.prepare(request)
+        async for chunk in coordinator.api.async_download_stream(uri):
+            await response.write(chunk)
+        await response.write_eof()
+        return response
+
+
+class EventsView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/events -> recent pushed events."""
+
+    url = "/api/hikvision_nvr/{device_id}/events"
+    name = "api:hikvision_nvr:events"
+
+    @_handle_errors
+    async def get(self, request: web.Request, device_id: str) -> web.Response:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        since = request.query.get("since")
+        cutoff = dt_util.parse_datetime(since) if since else None
+        events = [
+            {
+                "type": event.type,
+                "state": event.state,
+                "channel": event.channel,
+                "description": event.description,
+                "timestamp": event.timestamp.isoformat(),
+            }
+            for event in coordinator.recent_events
+            if cutoff is None or event.timestamp > dt_util.as_utc(cutoff)
+        ]
+        return self.json(
+            {
+                "events": events,
+                "active": [
+                    {"channel": channel, "type": event_type}
+                    for (channel, event_type) in coordinator.active_events
+                ],
+            }
+        )
+
+
+class PtzView(_BaseView):
+    """POST /api/hikvision_nvr/{device_id}/{channel}/ptz"""
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/ptz"
+    name = "api:hikvision_nvr:ptz"
+
+    @_handle_errors
+    async def post(
+        self, request: web.Request, device_id: str, channel: str
+    ) -> web.Response:
+        coordinator = _get_coordinator(request.app["hass"], device_id)
+        chan = _get_channel(coordinator, channel)
+        if not chan.ptz:
+            raise web.HTTPBadRequest(reason=f"Channel {chan.id} has no PTZ")
+        try:
+            body = await request.json()
+        except ValueError:
+            raise web.HTTPBadRequest(reason="body must be JSON") from None
+
+        if (preset := body.get("preset")) is not None:
+            await coordinator.api.async_ptz_preset(chan.id, int(preset))
+        else:
+            clamp = lambda v: max(-100, min(100, int(v)))  # noqa: E731
+            await coordinator.api.async_ptz(
+                chan.id,
+                pan=clamp(body.get("pan", 0)),
+                tilt=clamp(body.get("tilt", 0)),
+                zoom=clamp(body.get("zoom", 0)),
+            )
+        return self.json({"ok": True})
+
+
+# ------------------------------------------------------------ stream cache
+
+
+async def _async_get_stream(hass: HomeAssistant, key: str, source: str) -> Stream:
+    """Return a running HLS stream for ``source``, reusing an existing one.
+
+    Re-requesting the same playback range while it is already playing must not
+    spin up a second ffmpeg -- that is what makes seeking in the card cheap.
+    """
+    streams: dict[str, tuple[Stream, Any]] = hass.data.setdefault(DATA_STREAMS, {})
+
+    if (existing := streams.get(key)) is not None:
+        stream, cancel_idle = existing
+        cancel_idle()
+        streams[key] = (stream, _schedule_idle_stop(hass, key))
+        return stream
+
+    if len(streams) >= MAX_PLAYBACK_STREAMS:
+        oldest = next(iter(streams))
+        await _async_stop_stream(hass, oldest)
+
+    from homeassistant.components.stream import DynamicStreamSettings
+
+    stream = create_stream(
+        hass,
+        source,
+        options={"rtsp_flags": "prefer_tcp", "use_wallclock_as_timestamps": "1"},
+        dynamic_stream_settings=DynamicStreamSettings(
+            preload_stream=False, orientation=Orientation.NO_TRANSFORM
+        ),
+        stream_label=key,
+    )
+    stream.add_provider(HLS_PROVIDER)
+    await stream.start()
+    streams[key] = (stream, _schedule_idle_stop(hass, key))
+    return stream
+
+
+@callback
+def _schedule_idle_stop(hass: HomeAssistant, key: str):
+    async def _stop(_now) -> None:
+        await _async_stop_stream(hass, key)
+
+    return async_call_later(hass, STREAM_IDLE.total_seconds(), _stop)
+
+
+async def _async_stop_stream(hass: HomeAssistant, key: str) -> None:
+    streams: dict[str, tuple[Stream, Any]] = hass.data.get(DATA_STREAMS, {})
+    if (entry := streams.pop(key, None)) is None:
+        return
+    stream, cancel_idle = entry
+    cancel_idle()
+    await stream.stop()
+
+
+# --------------------------------------------------------------- registration
+
+_VIEWS = (
+    DevicesView,
+    ChannelsView,
+    SnapshotView,
+    RecordingsView,
+    TimelineView,
+    LiveView,
+    PlaybackView,
+    DownloadView,
+    EventsView,
+    PtzView,
+)
+
+
+@callback
+def async_register_api(hass: HomeAssistant) -> None:
+    """Register the REST views once per Home Assistant run."""
+    if hass.data.get(f"{DOMAIN}_api_registered"):
+        return
+    hass.data[f"{DOMAIN}_api_registered"] = True
+    for view in _VIEWS:
+        hass.http.register_view(view)
