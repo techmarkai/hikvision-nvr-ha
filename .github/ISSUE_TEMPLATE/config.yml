@@ -1,0 +1,11 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Setup questions
+    url: https://github.com/techmarkai/hikvision-nvr-ha/discussions
+    about: How to configure something, or whether a device is supported.
+  - name: REST API reference
+    url: https://github.com/techmarkai/hikvision-nvr-ha/blob/main/docs/API.md
+    about: Every endpoint, with request and response examples.
+  - name: Architecture and troubleshooting
+    url: https://github.com/techmarkai/hikvision-nvr-ha/blob/main/docs/ARCHITECTURE.md
+    about: How it works, verified device behaviour, and a symptom-to-fix table.

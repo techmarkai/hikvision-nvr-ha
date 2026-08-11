@@ -15,7 +15,7 @@ import os
 import re
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from typing import Any
 from xml.etree import ElementTree as ET
 
@@ -156,20 +156,20 @@ def _parse_time(value: str) -> datetime:
     # Compact form used inside playback URIs: 20260810T000024Z
     if "-" not in value and len(value) >= 16:
         return datetime.strptime(value[:16], "%Y%m%dT%H%M%SZ").replace(
-            tzinfo=timezone.utc
+            tzinfo=UTC
         )
     # ISO with or without offset; Python needs +HH:MM, Hikvision sometimes emits Z.
     parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+        parsed = parsed.replace(tzinfo=UTC)
+    return parsed.astimezone(UTC)
 
 
 def to_isapi_time(value: datetime) -> str:
     """Render a datetime the way the search API expects (always UTC)."""
     if value.tzinfo is None:
-        value = value.replace(tzinfo=timezone.utc)
-    return value.astimezone(timezone.utc).strftime(_TIME_FMT)
+        value = value.replace(tzinfo=UTC)
+    return value.astimezone(UTC).strftime(_TIME_FMT)
 
 
 class _Digest:
@@ -318,7 +318,7 @@ class HikvisionISAPI:
                     self._auth_mode = "basic"
         except aiohttp.ClientError as err:
             raise ConnectionFailed(f"Cannot reach {self.host}: {err}") from err
-        except asyncio.TimeoutError as err:
+        except TimeoutError as err:
             raise ConnectionFailed(f"Timeout talking to {self.host}") from err
 
         if response.status == 403:
@@ -567,8 +567,8 @@ class HikvisionISAPI:
 
             auth = f"{quote(self._user, safe='')}:{quote(self._password, safe='')}@"
         fmt = "%Y%m%dT%H%M%SZ"
-        start_s = start.astimezone(timezone.utc).strftime(fmt)
-        end_s = end.astimezone(timezone.utc).strftime(fmt)
+        start_s = start.astimezone(UTC).strftime(fmt)
+        end_s = end.astimezone(UTC).strftime(fmt)
         return (
             f"rtsp://{auth}{self.host}:{self.rtsp_port}"
             f"/Streaming/tracks/{channel * 100 + 1}"
@@ -732,7 +732,7 @@ class HikvisionISAPI:
         try:
             timestamp = _parse_time(_text(root, "dateTime"))
         except ValueError:
-            timestamp = datetime.now(timezone.utc)
+            timestamp = datetime.now(UTC)
         return Event(
             type=_text(root, "eventType", "unknown"),
             state=_text(root, "eventState", "active"),
@@ -749,8 +749,8 @@ class HikvisionISAPI:
         """Continuous PTZ move. Values are -100..100; all zero stops."""
         body = (
             '<?xml version="1.0" encoding="UTF-8"?>'
-            '<PTZData><pan>%d</pan><tilt>%d</tilt><zoom>%d</zoom></PTZData>'
-            % (pan, tilt, zoom)
+            f"<PTZData><pan>{pan:d}</pan><tilt>{tilt:d}</tilt>"
+            f"<zoom>{zoom:d}</zoom></PTZData>"
         )
         await self.request(
             "PUT", f"/ISAPI/PTZCtrl/channels/{channel}/continuous", data=body

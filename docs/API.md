@@ -60,7 +60,7 @@ The body carries a human-readable `message`.
 
 A `{device_id}` is the NVR's **serial number**, as returned by `/devices`. For
 convenience the API also accepts the NVR's **IP address** or its **config-entry
-title**, so `…/192.168.1.222/1/snapshot` works too.
+title**, so `…/192.168.1.10/1/snapshot` works too.
 
 A `{channel}` is the channel number as shown on the NVR (1-8 on a DS-7608),
 **not** the ISAPI stream id (101/102).
@@ -89,12 +89,12 @@ app should make first.
 {
   "devices": [
     {
-      "id": "DS-7608NI-K2-8P08201711…WCVU",
+      "id": "DS-7608NI-K2-8P0000000000AAAA000000000AAAA",
       "name": "Home",
-      "host": "192.168.1.222",
+      "host": "192.168.1.10",
       "model": "DS-7608NI-K2/8P",
       "firmware": "V4.40.015",
-      "mac": "b4:a3:82:xx:xx:xx",
+      "mac": "00:11:22:33:44:55",
       "available": true,
       "storage": [
         { "id": 1, "name": "hdd1", "status": "ok",
@@ -145,7 +145,7 @@ every few seconds for a thumbnail wall.
 ```bash
 curl -H "Authorization: Bearer $HA_TOKEN" \
      -o front.jpg \
-     "https://homeassistant.local:8123/api/hikvision_nvr/192.168.1.222/1/snapshot?stream=1"
+     "https://homeassistant.local:8123/api/hikvision_nvr/192.168.1.10/1/snapshot?stream=1"
 ```
 
 ---
@@ -159,7 +159,7 @@ Starts (or reuses) a live HLS stream and returns where to play it.
   "channel": 1,
   "stream": 1,
   "hls_url": "/api/hls/8f3c…/master_playlist.m3u8",
-  "rtsp_url": "rtsp://192.168.1.222:554/Streaming/Channels/101"
+  "rtsp_url": "rtsp://192.168.1.10:554/Streaming/Channels/101"
 }
 ```
 
@@ -258,7 +258,7 @@ Plays back a time range from the NVR's disks over HLS.
   "duration": 111,
   "mp4_url": "/api/hikvision_nvr/…/1/clip/1786419624/1786419735.mp4",
   "download_url": "/api/hikvision_nvr/…/1/download?start=…&end=…",
-  "rtsp_url": "rtsp://192.168.1.222:554/Streaming/tracks/101/?starttime=20260810T000024Z&endtime=20260810T000215Z"
+  "rtsp_url": "rtsp://192.168.1.10:554/Streaming/tracks/101/?starttime=20260810T000024Z&endtime=20260810T000215Z"
 }
 ```
 

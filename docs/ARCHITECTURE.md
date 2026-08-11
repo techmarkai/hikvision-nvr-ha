@@ -1,7 +1,7 @@
-# Handover — Hikvision NVR integration
+# Architecture and operations
 
-Everything a second engineer needs to own this: what was built, what was proven
-against real hardware, where the sharp edges are, and how to operate it.
+How the integration is put together, what was proven against real hardware,
+where the sharp edges are, and how to run it.
 
 ---
 
@@ -40,8 +40,7 @@ belongs above it.
 
 Everything below was confirmed against the live unit, not read from a datasheet.
 
-**Device:** DS-7608NI-K2/8P · firmware V4.40.015 · 8 channels ·
-serial `DS-7608NI-K2-8P08201711…WCVU` · MAC `b4:a3:82:xx:xx:xx`
+**Reference device:** DS-7608NI-K2/8P · firmware V4.40.015 · 8 channels.
 
 | Surface | Endpoint | Result |
 |---|---|---|
@@ -72,7 +71,7 @@ Things the firmware does that the code exists to absorb:
 4. **Not every channel has both streams.** Requesting a non-existent sub-stream
    fails the stream outright, so both camera and API clamp to what the channel
    actually reports.
-5. **The serial number contains a slash** (`DS-7608NI-K2/8P0820…`). It is fine
+5. **The serial number contains a slash** (`DS-7608NI-K2-8P0000000000AAAA000000000AAAA`). It is fine
    as an entity unique_id, but it cannot go in a URL path or a media-source
    identifier -- `coordinator.slug` is the sanitised form used for both.
 6. **The NVR clock is its own.** Event freshness is stamped on receipt, not from
@@ -287,7 +286,7 @@ Nothing here is worth building until someone actually wants audio from Camera 01
 ### Verify the device end of the stack
 
 ```bash
-python tests/live_check.py 192.168.1.222 admin '<password>'
+python tests/live_check.py 192.168.1.10 admin '<password>'
 ```
 
 Exercises connect, channel discovery, snapshot, storage, recording search with
@@ -360,27 +359,3 @@ Each of these is a decision, not an oversight — with the trigger for revisitin
 | Local recording/retention in Home Assistant | The NVR already has 5.7 TB and does it better | Never, ideally. |
 
 ---
-
-## 7. Deployment status
-
-- **Written and validated on disk:** all modules compile, JSON/YAML parse, the
-  card passes `node --check`.
-- **Validated against the live NVR at 192.168.1.222:** every ISAPI surface in
-  §2, via `tests/live_check.py`, all assertions passing.
-- **Not yet installed on the Home Assistant instance** at
-  `https://homeassistant.local:8123` (HA 2026.8.1). That instance has no Samba or SSH
-  add-on, and the File editor add-on's write API is not reachable through the
-  Supervisor ingress proxy, so the files could not be copied over remotely.
-  Install by either route in the README (HACS custom repository, or copying the
-  two directories into `config/`), then restart and add the integration.
-
-### Post-install checklist
-
-1. Restart Home Assistant, check the log for `hikvision_nvr`.
-2. Add the integration; expect **8 camera entities**, storage sensors, and one
-   motion sensor per channel.
-3. Open a camera — live view should start within a couple of seconds.
-4. **Media → Hikvision NVR** — browse to a day and play a segment.
-5. Add the card, switch to **History**, click the timeline.
-6. `curl` `/api/hikvision_nvr/devices` with a long-lived token.
-7. Walk in front of a camera; the motion sensor should turn on within a second.

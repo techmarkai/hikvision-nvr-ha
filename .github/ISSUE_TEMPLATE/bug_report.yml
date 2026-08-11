@@ -1,0 +1,68 @@
+name: Bug report
+description: Something does not work as documented
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Before filing: run the device check to find out whether the NVR or the
+        integration is at fault. It isolates the two and it is the first thing
+        that will be asked for.
+
+        ```bash
+        python tests/live_check.py <nvr-ip> <username> '<password>'
+        ```
+
+  - type: input
+    id: model
+    attributes:
+      label: NVR / DVR model and firmware
+      placeholder: DS-7608NI-K2/8P, V4.40.015
+    validations:
+      required: true
+
+  - type: input
+    id: versions
+    attributes:
+      label: Integration version and Home Assistant version
+      placeholder: 1.20.0 / 2026.8.1
+    validations:
+      required: true
+
+  - type: textarea
+    id: what
+    attributes:
+      label: What happens, and what you expected instead
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: |
+        1. Open the card in History
+        2. Click the timeline at 14:05
+        3. ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: |
+        Set `custom_components.hikvision_nvr: debug` under `logger:` in
+        configuration.yaml, reproduce, then paste the relevant lines.
+        **Remove your IP addresses, serial numbers and tokens first.**
+      render: text
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checks
+      options:
+        - label: ISAPI / Hikvision-CGI is enabled on the device
+          required: true
+        - label: I have removed personal data (hosts, serials, tokens) from what I pasted
+          required: true

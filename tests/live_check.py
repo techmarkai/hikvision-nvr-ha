@@ -1,6 +1,6 @@
 """Live self-check against a real NVR. No framework, no fixtures.
 
-    python tests/live_check.py 192.168.1.222 admin PASSWORD
+    python tests/live_check.py 192.168.1.10 admin PASSWORD
 
 Fails loudly if any ISAPI surface the integration depends on breaks.
 """
@@ -8,11 +8,10 @@ Fails loudly if any ISAPI surface the integration depends on breaks.
 from __future__ import annotations
 
 import asyncio
-import sys
-from datetime import datetime, timedelta, timezone
-from pathlib import Path
-
 import importlib.util  # noqa: E402
+import sys
+from datetime import UTC, datetime, timedelta
+from pathlib import Path
 
 import aiohttp  # noqa: E402
 
@@ -82,7 +81,7 @@ async def main(host: str, user: str, password: str) -> None:
                 f"{disk['used_percent']}% used of {disk['capacity_mb']} MB"
             )
 
-        end = datetime.now(timezone.utc)
+        end = datetime.now(UTC)
         start = end - timedelta(days=1)
         recordings, total = await api.async_search_recordings(
             first.id, start, end, max_results=60

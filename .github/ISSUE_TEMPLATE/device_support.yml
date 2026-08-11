@@ -1,0 +1,40 @@
+name: Device support
+description: A model or firmware that behaves differently
+labels: [device]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Hikvision firmwares differ in which ISAPI endpoints exist and what they
+        return. The integration detects capabilities rather than assuming them,
+        so the useful report is *what your device actually answered*.
+
+  - type: input
+    id: model
+    attributes:
+      label: Model and firmware
+    validations:
+      required: true
+
+  - type: textarea
+    id: endpoints
+    attributes:
+      label: What the device returns
+      description: |
+        Output of the endpoints that matter, with serials and hosts removed:
+
+        ```bash
+        curl --digest -u user:pass http://<nvr>/ISAPI/System/deviceInfo
+        curl --digest -u user:pass http://<nvr>/ISAPI/ContentMgmt/InputProxy/channels
+        curl --digest -u user:pass http://<nvr>/ISAPI/Event/triggers
+        ```
+      render: xml
+    validations:
+      required: true
+
+  - type: textarea
+    id: behaviour
+    attributes:
+      label: What works and what does not
+    validations:
+      required: true

@@ -2,10 +2,18 @@
 
 # Hikvision NVR for Home Assistant
 
+[![Validate](https://github.com/techmarkai/hikvision-nvr-ha/actions/workflows/validate.yml/badge.svg)](https://github.com/techmarkai/hikvision-nvr-ha/actions/workflows/validate.yml)
+[![Release](https://img.shields.io/github/v/release/techmarkai/hikvision-nvr-ha?sort=semver)](https://github.com/techmarkai/hikvision-nvr-ha/releases)
+[![HACS: custom](https://img.shields.io/badge/HACS-custom-41BDF5.svg)](https://hacs.xyz/)
+[![Home Assistant](https://img.shields.io/badge/Home%20Assistant-2025.2%2B-41BDF5.svg)](https://www.home-assistant.io/)
+[![Licence: MIT](https://img.shields.io/badge/licence-MIT-black.svg)](LICENSE)
+
 Live view, recorded-history playback, motion events and a full REST API for a
 Hikvision NVR/DVR — as a native Home Assistant integration, added from the UI.
 
-Verified against a **DS-7608NI-K2/8P, firmware V4.40.015, 8 channels**.
+Developed and verified against a **DS-7608NI-K2/8P, firmware V4.40.015, 8
+channels**. Capabilities are read from the device rather than assumed, so other
+ISAPI models work to the extent their firmware exposes the same surfaces.
 
 ## What you get
 
@@ -99,8 +107,8 @@ not locked out from earlier failed logins.
 ## Documentation
 
 - [docs/API.md](docs/API.md) — the REST API, endpoint by endpoint, with examples.
-- [docs/HANDOVER.md](docs/HANDOVER.md) — architecture, verified device behaviour,
-  operations and troubleshooting.
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — how it is built, verified device
+  behaviour, operations and troubleshooting.
 
 ## A note on H.265
 
@@ -148,6 +156,15 @@ is therefore optional; it would only matter if this integration were ever
 accepted into Home Assistant core. Assets and instructions for that are in
 [`brand/home-assistant-brands/`](brand/home-assistant-brands/README.md).
 
+## Contributing
+
+Pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for the
+checks CI runs and the one structural rule (`isapi.py` never imports Home
+Assistant). Report anything exploitable through
+[SECURITY.md](SECURITY.md) rather than a public issue.
+
+This project is not affiliated with or endorsed by Hikvision.
+
 ## Licence
 
-MIT.
+MIT — see [LICENSE](LICENSE).

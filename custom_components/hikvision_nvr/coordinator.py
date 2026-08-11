@@ -61,7 +61,7 @@ class HikvisionCoordinator(DataUpdateCoordinator[dict[str, Any]]):
         """URL-safe id, for the REST API and media-source identifiers.
 
         Hikvision serials contain the model, so they contain a slash
-        ("DS-7608NI-K2/8P0820…"). Put that in a URL path and no route matches;
+        ("DS-7608NI-K2-8P0000000000AAAA000000000AAAA"). Put that in a URL path and no route matches;
         put it in a media-source identifier and splitting on "/" corrupts it.
         """
         return re.sub(r"[^A-Za-z0-9._-]", "-", self.device_id)

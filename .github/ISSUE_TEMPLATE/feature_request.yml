@@ -1,0 +1,22 @@
+name: Feature request
+description: Something the integration should do and does not
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: The goal, not the implementation. It often turns out an existing entity or service already covers it.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: What should it look like?
+
+  - type: input
+    id: isapi
+    attributes:
+      label: Relevant ISAPI endpoint, if you know one
+      placeholder: /ISAPI/System/TwoWayAudio
