@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.5.0";
+const CARD_VERSION = "1.5.1";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -300,7 +300,9 @@ class HikvisionNvrCard extends HTMLElement {
       this._blocks.find((b) => b.end > when);
     if (!block) return;
     const from = when > block.start ? when : block.start;
-    const to = new Date(Math.min(block.end.getTime(), from.getTime() + 3600e3));
+    // Ten minutes, not the whole block: ffmpeg starts sooner and seeking
+    // elsewhere does not leave a long remux running behind you.
+    const to = new Date(Math.min(block.end.getTime(), from.getTime() + 600e3));
     this._cursor = from;
     this._render();
     try {
@@ -533,6 +535,9 @@ class HikvisionNvrCard extends HTMLElement {
       video.playsInline = true;
       video.preload = "auto";
       stage.appendChild(video);
+      // Chrome pauses muted video-only media in a background tab ("paused to
+      // save power"); that rejection is expected and not worth surfacing.
+      video.play().catch(() => {});
       return;
     }
 

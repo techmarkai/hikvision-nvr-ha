@@ -496,6 +496,12 @@ class ClipView(_BaseView):
             get_ffmpeg_manager(hass).binary,
             "-hide_banner", "-loglevel", "error",
             "-rtsp_transport", "tcp",
+            # Cap stream probing: ffmpeg otherwise spends seconds analysing
+            # before it emits anything, which is most of the startup delay.
+            "-probesize", "1000000",
+            "-analyzeduration", "1000000",
+            "-fflags", "+nobuffer+flush_packets",
+            "-flags", "low_delay",
             "-i", source,
             "-an",                      # see the docstring: HA/PyAV vs G.722.1
             "-c:v", "copy",             # no transcode; the NVR's bitstream as-is
