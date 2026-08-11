@@ -66,6 +66,21 @@ def main() -> None:
     unpresentable = isapi.DEVICE_EVENTS - set(const.EVENT_CLASSES)
     assert not unpresentable, f"DEVICE_EVENTS not presentable: {sorted(unpresentable)}"
 
+    # Icons are optional, but an icon for a key that does not exist is a typo.
+    icons_path = COMPONENT / "icons.json"
+    if icons_path.exists():
+        icons = json.loads(icons_path.read_text(encoding="utf-8"))
+        for platform, entries in icons.get("entity", {}).items():
+            known = set(strings["entity"].get(platform, {}))
+            stray = set(entries) - known
+            assert not stray, f"icons.json {platform} keys with no translation: {sorted(stray)}"
+            print(f"icons {platform:8}: {len(entries)} keys, all known")
+        services = set(icons.get("services", {}))
+        declared = set(strings.get("services", {}))
+        stray = services - declared
+        assert not stray, f"icons.json services not declared: {sorted(stray)}"
+        print(f"icons services : {len(services)} of {len(declared)} services")
+
     print("ALL TRANSLATION CHECKS PASSED")
 
 

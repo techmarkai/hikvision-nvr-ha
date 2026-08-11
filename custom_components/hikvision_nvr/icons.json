@@ -1,0 +1,55 @@
+{
+  "services": {
+    "search_recordings": {
+      "service": "mdi:file-search"
+    },
+    "export_recording": {
+      "service": "mdi:content-save-move"
+    },
+    "ptz": {
+      "service": "mdi:axis-arrow"
+    },
+    "reboot": {
+      "service": "mdi:restart"
+    }
+  },
+  "entity": {
+    "binary_sensor": {
+      "facesnap": {
+        "default": "mdi:account-box"
+      },
+      "io": {
+        "default": "mdi:electric-switch"
+      },
+      "ipconflict": {
+        "default": "mdi:ip-network"
+      },
+      "illaccess": {
+        "default": "mdi:account-alert"
+      },
+      "recordingfailure": {
+        "default": "mdi:record-rec"
+      },
+      "scenechangedetection": {
+        "default": "mdi:image-filter-center-focus"
+      },
+      "softio": {
+        "default": "mdi:electric-switch"
+      },
+      "videoloss": {
+        "default": "mdi:video-off"
+      }
+    },
+    "sensor": {
+      "cpu_usage": {
+        "default": "mdi:cpu-64-bit"
+      },
+      "memory_used": {
+        "default": "mdi:memory"
+      },
+      "uptime": {
+        "default": "mdi:clock-start"
+      }
+    }
+  }
+}

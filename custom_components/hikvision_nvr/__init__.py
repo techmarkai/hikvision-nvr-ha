@@ -11,9 +11,9 @@ from homeassistant.const import (
     CONF_USERNAME,
     Platform,
 )
-from homeassistant.core import HomeAssistant
+from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr
+from homeassistant.helpers import device_registry as dr, entity_registry as er
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import async_register_api
@@ -26,7 +26,13 @@ from .const import (
 )
 from .coordinator import HikvisionConfigEntry, HikvisionCoordinator
 from .frontend import async_setup_frontend
-from .isapi import AuthError, ConnectionFailed, HikvisionError, HikvisionISAPI
+from .isapi import (
+    DEVICE_EVENTS,
+    AuthError,
+    ConnectionFailed,
+    HikvisionError,
+    HikvisionISAPI,
+)
 from .services import async_setup_services
 
 _LOGGER = logging.getLogger(__name__)
@@ -83,9 +89,39 @@ async def async_setup_entry(hass: HomeAssistant, entry: HikvisionConfigEntry) ->
         configuration_url=api.base_url,
     )
 
+    _async_remove_obsolete_entities(hass, entry, coordinator)
+
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options))
     return True
+
+
+@callback
+def _async_remove_obsolete_entities(
+    hass: HomeAssistant, entry: HikvisionConfigEntry, coordinator: HikvisionCoordinator
+) -> None:
+    """Drop NVR-level entities for events that belong to a channel.
+
+    Before capabilities were read from the device, an event arriving without a
+    channel id created an entity on the NVR itself -- this firmware emits
+    videoloss that way every few seconds, so a "Home Video loss" appeared that
+    nothing intended. Those events are now attributed to the channels that
+    declare them, leaving the old entity permanently unavailable. Remove it
+    rather than leave the user to guess which one is real.
+    """
+    registry = er.async_get(hass)
+    prefix = f"{coordinator.device_id}_0_"
+    for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if not entity.unique_id.startswith(prefix):
+            continue
+        event_type = entity.unique_id[len(prefix) :]
+        if event_type and event_type not in DEVICE_EVENTS:
+            _LOGGER.debug(
+                "Removing %s: %s is reported per channel, not per device",
+                entity.entity_id,
+                event_type,
+            )
+            registry.async_remove(entity.entity_id)
 
 
 async def async_unload_entry(hass: HomeAssistant, entry: HikvisionConfigEntry) -> bool:

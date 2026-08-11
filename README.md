@@ -1,3 +1,5 @@
+<img src="brand/logo.png" alt="Hikvision NVR for Home Assistant" width="420">
+
 # Hikvision NVR for Home Assistant
 
 Live view, recorded-history playback, motion events and a full REST API for a
@@ -94,6 +96,21 @@ Android devices, but desktop Chrome and Firefox cannot decode HEVC in HLS. Set
 the recording or sub-stream codec to **H.264** on the NVR for universal
 playback, or put go2rtc in front to transcode. `export_recording` produces a
 plain MP4 that plays everywhere either way.
+
+## Branding
+
+The mark in `brand/` is original artwork for this project, not the Hikvision
+logo — that is Hikvision's trademark and not ours to redistribute. "Hikvision"
+appears here only to say which hardware this integration talks to.
+
+Home Assistant shows a vendor logo on the integration page from the
+[home-assistant/brands](https://github.com/home-assistant/brands) repository,
+which only serves integrations that ship with Home Assistant itself; custom
+integrations get the default placeholder. If this integration is ever accepted
+into core, that is where its brand image would go.
+
+To use your own artwork, replace `brand/icon.svg` and run `python brand/render.py`,
+or simply drop your own `brand/icon.png` and `brand/logo.png` in place.
 
 ## Licence
 

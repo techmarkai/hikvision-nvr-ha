@@ -1,0 +1,39 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" role="img"
+     aria-label="Hikvision NVR integration icon">
+  <title>Hikvision NVR</title>
+  <!--
+    Original mark for this integration. Deliberately NOT the Hikvision logo:
+    that is their trademark and not ours to redistribute. A dome camera above a
+    recorder bar says what the integration does without borrowing anyone's
+    brand.
+
+    This file is the vector master. brand/render.py draws the same shapes with
+    Pillow to produce the PNGs, because no SVG rasteriser is assumed to be
+    installed -- keep the two in step if you change either.
+  -->
+  <defs>
+    <linearGradient id="dome" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0" stop-color="#e8eef5"/>
+      <stop offset="1" stop-color="#b7c4d4"/>
+    </linearGradient>
+    <linearGradient id="plate" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#e30613"/>
+      <stop offset="1" stop-color="#a30410"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="256" height="256" rx="56" fill="#16202b"/>
+
+  <!-- dome camera -->
+  <path d="M60 116a68 68 0 0 1 136 0z" fill="url(#dome)"/>
+  <rect x="52" y="116" width="152" height="16" rx="8" fill="#8fa0b5"/>
+  <circle cx="128" cy="98" r="30" fill="#0d1620"/>
+  <circle cx="128" cy="98" r="21" fill="#12293d"/>
+  <circle cx="120" cy="90" r="7" fill="#5fd0ff" opacity="0.85"/>
+
+  <!-- recorder bar with record light and disk lines -->
+  <rect x="44" y="156" width="168" height="52" rx="14" fill="url(#plate)"/>
+  <circle cx="76" cy="182" r="10" fill="#ffffff"/>
+  <rect x="100" y="176" width="88" height="6" rx="3" fill="#ffffff" opacity="0.9"/>
+  <rect x="100" y="190" width="56" height="6" rx="3" fill="#ffffff" opacity="0.55"/>
+</svg>
