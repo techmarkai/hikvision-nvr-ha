@@ -20,6 +20,7 @@ ISAPI models work to the extent their firmware exposes the same surfaces.
   &nbsp;
   <img src="docs/images/setup-dialog.png" alt="Adding an NVR from the Home Assistant UI" width="420">
 </p>
+<p align="center"><sub>The card in live view, and setup from the UI. Camera imagery is blurred here; it is not blurred in the integration.</sub></p>
 
 ## What you get
 

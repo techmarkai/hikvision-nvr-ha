@@ -1,50 +1,29 @@
 # Changelog
 
-Per-release notes live on the
-[Releases page](https://github.com/techmarkai/hikvision-nvr-ha/releases). This
-file records the milestones worth knowing about when deciding whether to
-upgrade.
-
 Versioning is [semantic](https://semver.org/): the minor version moves for
 features, the patch version for fixes. `manifest.json` carries the version HACS
 installs, and the frontend cache-busts on it — so an upgrade always ships a
 matching card.
 
-## 1.20
+## 1.20.0 — first public release
 
-Home Assistant best-practices pass. A repair now appears when the NVR is set to
-record a detection but not to report it — the condition that makes motion
-sensors sit silently off. Only detections that are actually switched on are
-counted.
+Everything below 1.20 was development, released only to the machine it was
+being built against; those tags have been removed. What that work produced:
 
-## 1.19
-
-Live audio, where the hardware has it. Channels are probed for a microphone and
-codec, and only those get a speaker control. G.711 is passed through untouched.
-
-## 1.16 – 1.18
-
-WebRTC live view through Home Assistant's native camera stream element, which
-took median start-up from 4.6 s to 1.6 s on the reference device. Downloads
-moved from a real-time RTSP read to the NVR's bulk endpoint plus a remux —
-about fifteen times quicker — and the clip length became selectable so a
-download saves exactly what the timeline plays.
-
-## 1.13 – 1.15
-
-Timeline zoom and pan, on the day already loaded, so zooming never waits on the
-NVR. Event sensors became opt-in per type: capability detection offers only what
-the device reports, and unticking one removes its entities instead of leaving
-them behind.
-
-## 1.10 – 1.12
-
-Capability-driven events, NVR health and storage sensors, per-channel
-connectivity from the device's own probe, and the branding shown on the
-integrations dashboard.
-
-## 1.0 – 1.9
-
-Live view, recorded-history playback on a timeline, the media browser, the
-sidebar panel with GUI setup, the auto-registered Lovelace card, the REST API
-and the services.
+- **Live view** over WebRTC where the browser and Home Assistant support it,
+  HLS otherwise. Median start-up on the reference device is 1.6 s, down from
+  4.6 s on the HLS-only path.
+- **Playback** on a zoomable timeline, straight from the NVR's disks. Zoom and
+  pan work on the day already loaded, so they never wait on the device.
+- **Downloads** from the NVR's bulk endpoint plus a remux, roughly fifteen times
+  faster than reading playback in real time, with a selectable clip length so a
+  download saves exactly what the timeline plays.
+- **Events** pushed over ISAPI's alert stream rather than polled, created from
+  the device's own capability declaration and switchable per type.
+- **Live audio** where the channel actually has a microphone. G.711 passes
+  through untouched.
+- **Health**: uptime, CPU, memory, per-disk usage and status, per-channel
+  connectivity from the NVR's own probe.
+- **Card, panel and REST API**, all registered on install.
+- A **repair** for the condition that makes motion sensors sit silently off: a
+  detection the NVR records but never reports.
