@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.3.0";
+const CARD_VERSION = "1.3.1";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -240,7 +240,11 @@ class HikvisionNvrCard extends HTMLElement {
         path: `/api/${API}/${this._device.id}/${channel}/snapshot`,
         expires: 300,
       });
-      this._snapshotUrls.set(channel, `${path}&_=${Date.now()}`);
+      // No cache-buster: auth/sign_path signs an EMPTY query-parameter list,
+      // so any extra query arg invalidates the signature and Home Assistant
+      // logs it as a failed login (and eventually IP-bans the browser). Each
+      // signed path is unique anyway -- the JWT carries its own issued-at.
+      this._snapshotUrls.set(channel, path);
       const img = this.shadowRoot.querySelector(`img[data-channel="${channel}"]`);
       if (img) img.src = this._snapshotUrls.get(channel);
     } catch (err) {

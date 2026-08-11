@@ -36,7 +36,11 @@ a path over the WebSocket API and use the result as a plain URL:
 ```
 
 The reply contains `path` with a `?authSig=…` query appended. That URL is valid
-for `expires` seconds and needs no header — hand it straight to `ImageView`,
+for `expires` seconds and needs no header. **Use it exactly as returned** —
+`sign_path` signs the path together with an empty parameter list, so appending
+anything (a `?stream=`, a cache-busting `&_=`) invalidates the signature and the
+request is rejected as a failed login. Sign a fresh path instead; each one is
+unique — hand it straight to `ImageView`,
 `AVPlayer`, ExoPlayer or an `<img>` tag.
 
 ### Errors

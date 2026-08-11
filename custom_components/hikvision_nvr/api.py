@@ -10,6 +10,7 @@ See docs/API.md for the full contract.
 
 from __future__ import annotations
 
+import inspect
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -18,7 +19,6 @@ from aiohttp import web
 from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.stream import Stream, create_stream
 from homeassistant.components.stream.const import HLS_PROVIDER
-from homeassistant.components.stream.core import Orientation
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
@@ -517,6 +517,42 @@ class PtzView(_BaseView):
 # ------------------------------------------------------------ stream cache
 
 
+def _create_stream_kwargs(label: str) -> dict[str, Any]:
+    """Build create_stream() kwargs that match this Home Assistant version.
+
+    DynamicStreamSettings has moved between homeassistant.components.stream and
+    .stream.core across releases, and create_stream's optional arguments have
+    come and gone. Rather than pin to one version's shape, ask the signature
+    what it takes and pass only that -- a wrong guess here is a hard 500 on
+    every live view and playback request.
+    """
+    kwargs: dict[str, Any] = {
+        "options": {"rtsp_flags": "prefer_tcp", "use_wallclock_as_timestamps": "1"}
+    }
+    params = inspect.signature(create_stream).parameters
+    if "stream_label" in params:
+        kwargs["stream_label"] = label
+    if "dynamic_stream_settings" in params:
+        settings = None
+        for module in ("homeassistant.components.stream.core",
+                       "homeassistant.components.stream"):
+            try:
+                settings_cls = getattr(
+                    __import__(module, fromlist=["DynamicStreamSettings"]),
+                    "DynamicStreamSettings",
+                )
+            except (ImportError, AttributeError):
+                continue
+            # Construct with defaults: field names have churned too.
+            settings = settings_cls()
+            break
+        if settings is None:
+            _LOGGER.debug("DynamicStreamSettings unavailable; using stream defaults")
+        else:
+            kwargs["dynamic_stream_settings"] = settings
+    return kwargs
+
+
 async def _async_get_stream(hass: HomeAssistant, key: str, source: str) -> Stream:
     """Return a running HLS stream for ``source``, reusing an existing one.
 
@@ -535,17 +571,7 @@ async def _async_get_stream(hass: HomeAssistant, key: str, source: str) -> Strea
         oldest = next(iter(streams))
         await _async_stop_stream(hass, oldest)
 
-    from homeassistant.components.stream import DynamicStreamSettings
-
-    stream = create_stream(
-        hass,
-        source,
-        options={"rtsp_flags": "prefer_tcp", "use_wallclock_as_timestamps": "1"},
-        dynamic_stream_settings=DynamicStreamSettings(
-            preload_stream=False, orientation=Orientation.NO_TRANSFORM
-        ),
-        stream_label=key,
-    )
+    stream = create_stream(hass, source, **_create_stream_kwargs(key))
     stream.add_provider(HLS_PROVIDER)
     await stream.start()
     streams[key] = (stream, _schedule_idle_stop(hass, key))
