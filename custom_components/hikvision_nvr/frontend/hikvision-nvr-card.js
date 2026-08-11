@@ -465,7 +465,9 @@ class HikvisionNvrCard extends HTMLElement {
     return ((fraction - from) / (to - from)) * 100;
   }
 
-  _playbackControls() {
+  /** The timeline's contents. Repainted alone while zooming and panning: a
+   *  full re-render would replace the element a drag is anchored to. */
+  _timelineInner() {
     const span = this._dayEnd - this._dayStart;
     const asFraction = (time) => (time - this._dayStart) / span;
 
@@ -500,6 +502,19 @@ class HikvisionNvrCard extends HTMLElement {
       cursorAt !== null && cursorAt >= this._view.from && cursorAt <= this._view.to
         ? `<div class="cursor" style="left:${this._toView(cursorAt)}%"></div>`
         : "";
+    return `<div class="hours">${ticks.join("")}</div>${blocks}${cursor}`;
+  }
+
+  /** Update the timeline in place, leaving its element and listeners intact. */
+  _paintTimeline() {
+    const timeline = this.shadowRoot.querySelector("#timeline");
+    if (!timeline) return;
+    timeline.innerHTML = this._timelineInner();
+    const reset = this.shadowRoot.querySelector("#zoomout");
+    if (reset) reset.disabled = this._view.to - this._view.from >= 0.999;
+  }
+
+  _playbackControls() {
     const zoomed = this._view.to - this._view.from < 0.999;
 
     return `
@@ -523,10 +538,7 @@ class HikvisionNvrCard extends HTMLElement {
         <button class="icon-btn" id="zoomout" ${zoomed ? "" : "disabled"} title="Show the whole day">Whole day</button>
         <button class="icon-btn" id="download" ${this._downloadUrl ? "" : "disabled"}>Download</button>
       </div>
-      <div class="timeline" id="timeline">
-        <div class="hours">${ticks}</div>
-        ${blocks}${cursor}
-      </div>
+      <div class="timeline" id="timeline">${this._timelineInner()}</div>
     `;
   }
 
@@ -553,7 +565,7 @@ class HikvisionNvrCard extends HTMLElement {
       const width = Math.min(Math.max(span, MIN_SPAN), 1);
       const start = Math.min(Math.max(from, 0), 1 - width);
       this._view = { from: start, to: start + width };
-      this._render();
+      this._paintTimeline();
     };
 
     timeline.addEventListener("click", (event) => {
@@ -630,7 +642,7 @@ class HikvisionNvrCard extends HTMLElement {
 
     card.querySelector("#zoomout").addEventListener("click", () => {
       this._view = { from: 0, to: 1 };
-      this._render();
+      this._paintTimeline();
     });
 
     const step = (direction) => {
