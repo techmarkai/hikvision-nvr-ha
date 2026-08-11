@@ -37,6 +37,10 @@ const CLIP_LENGTHS = [
 ];
 const DEFAULT_CLIP_SECONDS = 600;
 
+// How long the native player gets to produce a frame before we fall back
+// to HLS. Generous: WebRTC lands in about a second when it works.
+const NATIVE_LIVE_TIMEOUT = 6000;
+
 /** Force Home Assistant to load its camera chunk, which defines ha-hls-player. */
 let playerReady = null;
 function ensurePlayer() {
@@ -703,14 +707,26 @@ class HikvisionNvrCard extends HTMLElement {
     card.querySelector("#download").addEventListener("click", () => this._download());
   }
 
+  /** Does this subtree have a video that is actually decoding pixels? */
+  _hasLiveVideo(root) {
+    const stack = [root];
+    while (stack.length) {
+      const node = stack.pop();
+      if (!node) continue;
+      if (node.tagName === "VIDEO" && node.videoWidth > 100 && node.readyState >= 2) {
+        return true;
+      }
+      if (node.shadowRoot) stack.push(...node.shadowRoot.children);
+      if (node.children) stack.push(...node.children);
+    }
+    return false;
+  }
+
   async _renderStage(stage) {
     if (!stage || !this._selected) return;
     const url =
       this._mode === "live"
-        ? await this._liveUrl().catch((err) => {
-            this._error = `Live view failed: ${errText(err)}`;
-            return null;
-          })
+        ? await this._liveUrl().catch(() => null)
         : this._playbackUrl;
 
     if (!url) {
@@ -760,6 +776,43 @@ class HikvisionNvrCard extends HTMLElement {
     }
 
     await ensurePlayer();
+
+    // Live view: hand the camera entity to Home Assistant's own element, which
+    // negotiates WebRTC through go2rtc. Measured in this very stage, WebRTC
+    // reaches a decoding frame in ~1.0s against ~2.9-5.1s for our HLS URL, and
+    // it avoids starting a second stream (and second ffmpeg) beside the one the
+    // camera entity already runs.
+    //
+    // ha-camera-stream reads its Home Assistant handles from Lit contexts, not
+    // from a hass property, and must be attached before stateObj is assigned.
+    if (this._mode === "live" && customElements.get("ha-camera-stream")) {
+      const channel = this._channels.find((c) => c.id === this._selected);
+      const stateObj = channel && this._hass.states[channel.entity_id];
+      if (stateObj) {
+        const native = document.createElement("ha-camera-stream");
+        stage.appendChild(native);
+        native.stateObj = stateObj;
+        native.muted = true;
+        native.allowExoPlayer = true;
+
+        // Never leave a black stage: if nothing is decoding shortly, fall back
+        // to the HLS path, which is slower but has always worked.
+        const started = Date.now();
+        const watchdog = setInterval(() => {
+          if (!native.isConnected || stage.dataset.url !== url) {
+            clearInterval(watchdog);
+          } else if (this._hasLiveVideo(native)) {
+            clearInterval(watchdog);
+          } else if (Date.now() - started > NATIVE_LIVE_TIMEOUT) {
+            clearInterval(watchdog);
+            native.remove();
+            stage.dataset.url = "";
+            this._renderStage(stage);
+          }
+        }, 400);
+        return;
+      }
+    }
 
     if (customElements.get("ha-hls-player")) {
       const player = document.createElement("ha-hls-player");
