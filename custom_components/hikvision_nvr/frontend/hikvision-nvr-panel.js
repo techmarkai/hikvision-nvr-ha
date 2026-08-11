@@ -161,4 +161,8 @@ class HikvisionNvrPanel extends HTMLElement {
   }
 }
 
-customElements.define("hikvision-nvr-panel", HikvisionNvrPanel);
+// Home Assistant re-imports the panel module every time you navigate to the
+// panel, so this runs more than once per page. Defining twice throws.
+if (!customElements.get("hikvision-nvr-panel")) {
+  customElements.define("hikvision-nvr-panel", HikvisionNvrPanel);
+}
