@@ -14,8 +14,8 @@ Verified against a **DS-7608NI-K2/8P, firmware V4.40.015, 8 channels**.
 | **Live view** | One `camera` entity per channel, RTSP → HLS through Home Assistant's own stream engine. Works in the app, on the web, on Chromecast. |
 | **Playback** | Scrub a day of recordings on a timeline and play any moment, straight from the NVR's disks. No local copy, no re-recording. |
 | **Media browser** | Recordings appear under **Media → Hikvision NVR → camera → day**. |
-| **Events** | Motion, line crossing, intrusion, tamper, video loss, disk errors — pushed over ISAPI's alert stream, not polled. |
-| **Storage** | Per-disk usage and free-space sensors. |
+| **Events** | Motion, line crossing, intrusion, tamper, video loss, face detection and more — pushed over ISAPI's alert stream, not polled. The integration asks the NVR which events each channel actually supports and creates exactly those, so nothing dead appears and nothing real is missed. |
+| **NVR health** | Uptime, CPU, memory, per-disk usage, free space and health, online channel count, plus disk / network / illegal-login / recording-failure sensors. |
 | **Camera health** | A connectivity sensor per channel, from the NVR's own per-channel probe — truer than an ICMP ping, and it works even when the cameras sit on the NVR's PoE subnet. |
 | **Sidebar panel** | A **Cameras** page with the whole system in it, and an **Add NVR** button — IP, username and password, all from the GUI. |
 | **REST API** | `/api/hikvision_nvr/…` for third-party mobile apps, using ordinary Home Assistant tokens. |
@@ -58,6 +58,9 @@ default_mode: live       # or: playback
 live_stream: 1           # 1 = main, 2 = sub
 columns: 4
 ```
+
+In **History**, the **Clip** dropdown sets how much video a click on the timeline
+plays — and therefore how much **Download** saves, so the two never disagree.
 
 If the card does not appear right after an update, hard-refresh the browser
 (Ctrl-Shift-R) — the frontend caches by version.

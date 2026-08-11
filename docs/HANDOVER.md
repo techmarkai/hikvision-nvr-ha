@@ -57,6 +57,8 @@ serial `DS-7608NI-K2-8P08201711…WCVU` · MAC `b4:a3:82:xx:xx:xx`
 | Live RTSP | `rtsp://…/Streaming/Channels/101` | DESCRIBE 200, **H.265**. |
 | Playback RTSP | `rtsp://…/Streaming/tracks/101/?starttime=…&endtime=…` | DESCRIBE 200, video + G.722.1 audio. |
 | Not supported | `GET /ISAPI/System/Video/inputs/channels` | 403 `notSupport` — handled. |
+| Capabilities | `GET /ISAPI/Event/triggers` | 16 event types, per channel; 6 device-wide. |
+| System status | `GET /ISAPI/System/status` | Uptime, CPU, memory. |
 
 Things the firmware does that the code exists to absorb:
 
@@ -115,6 +117,25 @@ because the live RTSP stream carries no audio. Playback therefore goes through
 `-an`, streamed straight to a `<video>` tag. No transcode, no segmenting, lower
 latency than HLS, and signable because its times live in the path rather than
 the query. `export_recording` drops audio for the same reason.
+
+### Capability detection
+`/ISAPI/Event/triggers` is the device's own declaration of which events it
+supports and on which channel: ids read `VMD-3`, `tamper-1`, or plain `diskfull`
+for the NVR. `async_update_capabilities` turns that into
+`{channel: {event types}}`, with channel 0 for device-wide events, and the
+binary sensor platform creates exactly those entities. Motion, line crossing,
+intrusion, tamper and video loss are enabled by default; everything else the
+device declares is created but switched off, so a capable NVR does not bury the
+user. A firmware that does not expose the endpoint falls back to motion only.
+
+On the test rig this yields per-channel sets that genuinely differ — channel 8
+has no tamper or line/field detection, channels 1 and 2 have no line crossing.
+
+**Unattributed events.** This firmware emits `videoloss` every few seconds with
+an empty `channelID`, while declaring videoloss per channel. Taken literally the
+per-channel sensors would never move. `HikvisionCoordinator._channels_for`
+therefore applies an event that names no channel to every channel that declares
+it, and only device-level types land on the NVR.
 
 ### Events
 One long-lived HTTP connection consumes the multipart alert stream. It is an
