@@ -265,8 +265,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN,
-        SERVICE_ENABLE_NOTIFICATIONS,
-    SERVICE_EXPORT_RECORDING,
+        SERVICE_EXPORT_RECORDING,
         export,
         schema=EXPORT_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,

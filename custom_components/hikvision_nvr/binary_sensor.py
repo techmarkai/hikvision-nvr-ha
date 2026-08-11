@@ -140,11 +140,17 @@ class HikvisionBinarySensor(HikvisionEntity, BinarySensorEntity):
         self.async_write_ha_state()
         if event.active:
             # Nothing else would clear us if the device never sends "inactive".
+            # The callback must be decorated: an undecorated one is treated as a
+            # blocking job and run in an executor thread, and writing state off
+            # the event loop is not safe.
             async_call_later(
-                self.hass,
-                EVENT_AUTO_OFF.total_seconds() + 1,
-                lambda _now: self.async_write_ha_state(),
+                self.hass, EVENT_AUTO_OFF.total_seconds() + 1, self._refresh_state
             )
+
+    @callback
+    def _refresh_state(self, _now) -> None:
+        """Re-evaluate is_on once the auto-off window has passed."""
+        self.async_write_ha_state()
 
 
 class HikvisionChannelOnline(HikvisionEntity, BinarySensorEntity):
