@@ -8,7 +8,11 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.8.0";
+// Read from our own URL (…/hikvision-nvr-card.js?v=1.2.3) rather than a second
+// hand-maintained constant. A version banner that disagrees with the installed
+// integration is worse than none -- it sends you debugging the wrong build.
+const CARD_VERSION =
+  new URL(import.meta.url).searchParams.get("v") || "dev";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
