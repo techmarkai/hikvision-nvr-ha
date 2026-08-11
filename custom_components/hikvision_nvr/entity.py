@@ -24,18 +24,10 @@ class HikvisionEntity(CoordinatorEntity[HikvisionCoordinator]):
         nvr_id = (DOMAIN, coordinator.device_id)
 
         if channel is None:
-            self._attr_device_info = DeviceInfo(
-                identifiers={nvr_id},
-                name=info.get("name") or coordinator.api.host,
-                manufacturer="Hikvision",
-                model=info.get("model"),
-                sw_version=info.get("firmware"),
-                serial_number=info.get("serial"),
-                configuration_url=coordinator.api.base_url,
-                connections=(
-                    {("mac", info["mac"])} if info.get("mac") else set()
-                ),
-            )
+            # async_setup_entry registers the NVR itself, with its model,
+            # firmware, serial and MAC. Pointing at it is enough; repeating the
+            # details would be a second place for them to be wrong.
+            self._attr_device_info = DeviceInfo(identifiers={nvr_id})
         else:
             # Each camera is its own device, hung off the NVR. Lets users assign
             # cameras to areas independently.

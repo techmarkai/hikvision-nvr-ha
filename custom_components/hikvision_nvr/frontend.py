@@ -22,6 +22,8 @@ _LOGGER = logging.getLogger(__name__)
 
 URL_BASE = f"/{DOMAIN}_frontend"
 PANEL_PATH = "hikvision-nvr"
+# Set once the frontend is registered; also carries the card and panel URLs,
+# so its presence is the "already done" flag.
 DATA_URLS = f"{DOMAIN}_frontend_urls"
 
 
@@ -47,10 +49,8 @@ async def _async_asset_urls(hass: HomeAssistant) -> tuple[str, str]:
 
 async def async_setup_frontend(hass: HomeAssistant) -> None:
     """Register the static files, the card and the sidebar panel. Idempotent."""
-    if hass.data.get(f"{DOMAIN}_frontend"):
+    if DATA_URLS in hass.data:
         return
-    hass.data[f"{DOMAIN}_frontend"] = True
-
     card_url, panel_url = await _async_asset_urls(hass)
     hass.data[DATA_URLS] = (card_url, panel_url)
 
