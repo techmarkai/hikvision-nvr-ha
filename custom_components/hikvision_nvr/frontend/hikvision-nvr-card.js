@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.6.0";
+const CARD_VERSION = "1.8.0";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -18,6 +18,20 @@ console.info(
 
 const API = "hikvision_nvr";
 const SNAPSHOT_INTERVAL = 10000;
+
+// How much video a click on the timeline fetches, and therefore how much the
+// Download button saves. One control for both, so what you save is what you
+// just watched. The server caps a clip at 2 hours.
+const CLIP_LENGTHS = [
+  { seconds: 30, label: "30 sec" },
+  { seconds: 60, label: "1 min" },
+  { seconds: 120, label: "2 min" },
+  { seconds: 300, label: "5 min" },
+  { seconds: 600, label: "10 min" },
+  { seconds: 1800, label: "30 min" },
+  { seconds: 3600, label: "1 hour" },
+];
+const DEFAULT_CLIP_SECONDS = 600;
 
 /** Force Home Assistant to load its camera chunk, which defines ha-hls-player. */
 let playerReady = null;
@@ -157,6 +171,7 @@ class HikvisionNvrCard extends HTMLElement {
     this._date = isoDate(new Date());
     this._blocks = [];
     this._snapshotUrls = new Map();
+    this._clipSeconds = DEFAULT_CLIP_SECONDS;
     this._timers = [];
     this._error = null;
     this._loading = true;
@@ -309,7 +324,9 @@ class HikvisionNvrCard extends HTMLElement {
     const from = when > block.start ? when : block.start;
     // Ten minutes, not the whole block: ffmpeg starts sooner and seeking
     // elsewhere does not leave a long remux running behind you.
-    const to = new Date(Math.min(block.end.getTime(), from.getTime() + 600e3));
+    const to = new Date(
+      Math.min(block.end.getTime(), from.getTime() + this._clipSeconds * 1000)
+    );
     this._cursor = from;
     this._render();
     try {
@@ -469,6 +486,15 @@ class HikvisionNvrCard extends HTMLElement {
         <span style="font-size:12px;color:var(--secondary-text-color)">
           ${this._cursor ? hhmmss(this._cursor) : `${this._blocks.length} recorded blocks`}
         </span>
+        <label for="len" style="font-size:12px;color:var(--secondary-text-color)">Clip</label>
+        <select id="len" title="How much video to play and download">
+          ${CLIP_LENGTHS.map(
+            (o) =>
+              `<option value="${o.seconds}"${
+                o.seconds === this._clipSeconds ? " selected" : ""
+              }>${o.label}</option>`
+          ).join("")}
+        </select>
         <button class="icon-btn" id="download" ${this._downloadUrl ? "" : "disabled"}>Download</button>
       </div>
       <div class="timeline" id="timeline">
@@ -505,6 +531,10 @@ class HikvisionNvrCard extends HTMLElement {
           : [...this._blocks].reverse().find((b) => b.start < now);
       if (next) this._playFrom(next.start);
     };
+    card.querySelector("#len").addEventListener("change", (event) => {
+      this._clipSeconds = Number(event.target.value);
+      if (this._cursor) this._playFrom(this._cursor);
+    });
     card.querySelector("#prev").addEventListener("click", () => step(-1));
     card.querySelector("#next").addEventListener("click", () => step(1));
     card.querySelector("#download").addEventListener("click", () => this._download());

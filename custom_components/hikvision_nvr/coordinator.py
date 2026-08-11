@@ -6,6 +6,7 @@ import asyncio
 import logging
 import re
 from collections import deque
+from dataclasses import replace
 from datetime import datetime
 from typing import Any
 
@@ -17,7 +18,13 @@ from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, Upda
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN, EVENT_AUTO_OFF, SCAN_INTERVAL, SIGNAL_EVENT
-from .isapi import AuthError, Event, HikvisionError, HikvisionISAPI
+from .isapi import (
+    DEVICE_EVENTS,
+    AuthError,
+    Event,
+    HikvisionError,
+    HikvisionISAPI,
+)
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -94,18 +101,45 @@ class HikvisionCoordinator(DataUpdateCoordinator[dict[str, Any]]):
             backoff = min(backoff * 2, 300)
 
     @callback
+    def _channels_for(self, event: Event) -> list[int]:
+        """Which channels an event applies to.
+
+        The stream does not always say. This NVR emits videoloss with an empty
+        channelID roughly every seven seconds, and videoloss is a per-channel
+        capability -- so taken literally, the per-channel sensors would never
+        move and an NVR-level one would appear that nothing designed. An
+        unattributed event is therefore applied to every channel that declares
+        it, which is the only reading that works whether or not the firmware
+        names the channel.
+        """
+        if event.channel:
+            return [event.channel]
+        if event.type in DEVICE_EVENTS:
+            return [0]
+        declared = [
+            channel_id
+            for channel_id, events in self.api.event_capabilities.items()
+            if channel_id and event.type in events
+        ]
+        return declared or [0]
+
+    @callback
     def _handle_event(self, event: Event) -> None:
-        # Channel-less events (disk, network, NVR-wide videoloss) land on 0.
-        channel = event.channel or 0
-        key = (channel, event.type)
         self.recent_events.append(event)
-        if event.active:
-            # Stamped on receipt, not with event.dateTime: NVR clocks drift and
-            # a device an hour behind would make every event look expired.
-            self.active_events[key] = dt_util.utcnow()
-        else:
-            self.active_events.pop(key, None)
-        async_dispatcher_send(self.hass, f"{SIGNAL_EVENT}_{self.device_id}", event)
+        for channel in self._channels_for(event):
+            key = (channel, event.type)
+            if event.active:
+                # Stamped on receipt, not with event.dateTime: NVR clocks drift
+                # and a device an hour behind would make every event look
+                # expired.
+                self.active_events[key] = dt_util.utcnow()
+            else:
+                self.active_events.pop(key, None)
+            async_dispatcher_send(
+                self.hass,
+                f"{SIGNAL_EVENT}_{self.device_id}",
+                replace(event, channel=channel),
+            )
 
     @callback
     def is_event_active(self, channel: int, event_type: str) -> bool:
