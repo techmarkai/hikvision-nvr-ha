@@ -584,7 +584,14 @@ class HikvisionNvrCard extends HTMLElement {
     const points = new Map();
     timeline.addEventListener("pointerdown", (event) => {
       points.set(event.pointerId, event.clientX);
-      timeline.setPointerCapture(event.pointerId);
+      // Capture keeps the drag alive if the pointer leaves the bar, but it
+      // throws for a pointer the element does not recognise -- and an
+      // exception here would abort the handler and silently kill panning.
+      try {
+        timeline.setPointerCapture(event.pointerId);
+      } catch {
+        /* pan still works without capture, it just stops at the edge */
+      }
       drag = { x: event.clientX, view: { ...this._view } };
       this._panned = false;
     });
