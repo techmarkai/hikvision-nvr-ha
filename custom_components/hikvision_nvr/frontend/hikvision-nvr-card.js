@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.5.3";
+const CARD_VERSION = "1.5.4";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -246,7 +246,14 @@ class HikvisionNvrCard extends HTMLElement {
       // signed path is unique anyway -- the JWT carries its own issued-at.
       this._snapshotUrls.set(channel, path);
       const img = this.shadowRoot.querySelector(`img[data-channel="${channel}"]`);
-      if (img) img.src = this._snapshotUrls.get(channel);
+      if (img) {
+        // A signed path minted before a Home Assistant restart is rejected
+        // afterwards, and every rejection counts towards HA's IP-ban tally.
+        // Drop a failed URL so the next tick signs a fresh one instead of
+        // re-requesting the dead one.
+        img.onerror = () => this._snapshotUrls.delete(channel);
+        img.src = this._snapshotUrls.get(channel);
+      }
     } catch (err) {
       /* a single failed thumbnail must not break the card */
     }

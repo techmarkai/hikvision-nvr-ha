@@ -516,21 +516,27 @@ class ClipView(_BaseView):
             headers={"Content-Type": "video/mp4", "Cache-Control": "no-store"}
         )
         await response.prepare(request)
+        disconnected = False
         try:
             while chunk := await process.stdout.read(65536):
                 await response.write(chunk)
             await response.write_eof()
         except (ConnectionResetError, asyncio.CancelledError):
-            # Viewer seeked or closed the card; nothing to report.
-            pass
+            # Viewer seeked or closed the card.
+            disconnected = True
         finally:
             if process.returncode is None:
                 process.kill()
                 await process.wait()
-        if process.returncode not in (0, None, -9):
+        # A viewer seeking away leaves ffmpeg writing into a closed pipe, so it
+        # exits non-zero through no fault of its own. Only a failure while the
+        # viewer was still watching is worth a warning.
+        if not disconnected and process.returncode not in (0, None, -9):
             _LOGGER.warning(
                 "ffmpeg exited %s for channel %s clip", process.returncode, chan.id
             )
+        elif disconnected:
+            _LOGGER.debug("clip stopped early for channel %s (viewer left)", chan.id)
         return response
 
 
