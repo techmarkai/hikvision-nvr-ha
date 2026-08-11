@@ -62,6 +62,11 @@ columns: 4
 In **History**, the **Clip** dropdown sets how much video a click on the timeline
 plays — and therefore how much **Download** saves, so the two never disagree.
 
+The timeline zooms: **scroll** on it (or **pinch** on a touchscreen) to zoom
+around the pointer, **drag** to pan, and **Whole day** to go back out. Tick
+labels get finer as you zoom in. All of it works on the day already loaded, so
+zooming never waits on the NVR.
+
 If the card does not appear right after an update, hard-refresh the browser
 (Ctrl-Shift-R) — the frontend caches by version.
 
@@ -83,6 +88,10 @@ not locked out from earlier failed logins.
 **Settings → Devices & Services → Hikvision NVR → Configure**
 
 - **Channels to expose** — hide unused channels.
+- **Events to expose** — which detections become binary sensors. Only what your
+  device actually reports is offered, and unticking one removes its entities
+  rather than leaving them behind. A capable NVR reports far more than most
+  people want.
 - **Live view stream** — main (full resolution) or sub (light, starts faster).
 - **Snapshot stream** — sub stream keeps thumbnails cheap on large systems.
 

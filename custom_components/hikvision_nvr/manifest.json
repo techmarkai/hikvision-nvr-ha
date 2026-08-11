@@ -1,7 +1,7 @@
 {
   "domain": "hikvision_nvr",
   "name": "Hikvision NVR",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "documentation": "https://github.com/techmarkai/hikvision-nvr-ha",
   "issue_tracker": "https://github.com/techmarkai/hikvision-nvr-ha/issues",
   "codeowners": [

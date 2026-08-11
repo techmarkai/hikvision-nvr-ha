@@ -18,11 +18,13 @@ from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import async_register_api
 from .const import (
+    CONF_EVENTS,
     CONF_RTSP_PORT,
     CONF_USE_SSL,
     CONF_VERIFY_SSL,
     DEFAULT_RTSP_PORT,
     DOMAIN,
+    EVENT_CLASSES,
 )
 from .coordinator import HikvisionConfigEntry, HikvisionCoordinator
 from .frontend import async_setup_frontend
@@ -100,24 +102,52 @@ async def async_setup_entry(hass: HomeAssistant, entry: HikvisionConfigEntry) ->
 def _async_remove_obsolete_entities(
     hass: HomeAssistant, entry: HikvisionConfigEntry, coordinator: HikvisionCoordinator
 ) -> None:
-    """Drop NVR-level entities for events that belong to a channel.
+    """Remove event entities that should no longer exist.
 
-    Before capabilities were read from the device, an event arriving without a
-    channel id created an entity on the NVR itself -- this firmware emits
-    videoloss that way every few seconds, so a "Home Video loss" appeared that
-    nothing intended. Those events are now attributed to the channels that
-    declare them, leaving the old entity permanently unavailable. Remove it
-    rather than leave the user to guess which one is real.
+    Two cases:
+
+    NVR-level entities for per-channel events. Before capabilities were read
+    from the device, an event arriving without a channel id created an entity on
+    the NVR itself -- this firmware emits videoloss that way every few seconds,
+    so a "Home Video loss" appeared that nothing intended. Those events are now
+    attributed to the channels that declare them, leaving the old entity
+    permanently unavailable.
+
+    Event types the user has switched off in the options. Disabling them would
+    leave rows behind in the entity list, which is the opposite of the point --
+    if you asked for fewer sensors you should get fewer sensors.
     """
     registry = er.async_get(hass)
-    prefix = f"{coordinator.device_id}_0_"
+    device_prefix = f"{coordinator.device_id}_0_"
+    chosen = entry.options.get(CONF_EVENTS)
+    # Anything that is not an event sensor: connectivity, disks, system values.
+    keep_suffixes = ("_online", "_problem", "_usage", "_free", "_uptime")
+
     for entity in er.async_entries_for_config_entry(registry, entry.entry_id):
-        if not entity.unique_id.startswith(prefix):
+        unique_id = entity.unique_id
+
+        if unique_id.startswith(device_prefix):
+            event_type = unique_id[len(device_prefix) :]
+            if event_type and event_type not in DEVICE_EVENTS:
+                _LOGGER.debug(
+                    "Removing %s: %s is reported per channel, not per device",
+                    entity.entity_id,
+                    event_type,
+                )
+                registry.async_remove(entity.entity_id)
+                continue
+
+        if chosen is None or entity.domain != "binary_sensor":
             continue
-        event_type = entity.unique_id[len(prefix) :]
-        if event_type and event_type not in DEVICE_EVENTS:
+        if unique_id.endswith(keep_suffixes):
+            continue
+        # unique_id is "<device>_<channel>_<event type>"; the event type is
+        # whatever follows the channel number.
+        parts = unique_id.rsplit("_", 1)
+        event_type = parts[-1] if len(parts) == 2 else ""
+        if event_type and event_type in EVENT_CLASSES and event_type not in chosen:
             _LOGGER.debug(
-                "Removing %s: %s is reported per channel, not per device",
+                "Removing %s: %s is switched off in the options",
                 entity.entity_id,
                 event_type,
             )

@@ -34,11 +34,13 @@
         "data": {
           "channels": "Channels to expose",
           "stream": "Live view stream",
-          "snapshot_stream": "Snapshot stream"
+          "snapshot_stream": "Snapshot stream",
+          "events": "Events to expose"
         },
         "data_description": {
           "stream": "Main stream is full resolution. Sub stream is much lighter and starts faster.",
-          "snapshot_stream": "Sub stream keeps thumbnails cheap on large systems."
+          "snapshot_stream": "Sub stream keeps thumbnails cheap on large systems.",
+          "events": "Only these become binary sensors. Untick what you do not need -- a capable NVR reports far more than most people want."
         }
       }
     }

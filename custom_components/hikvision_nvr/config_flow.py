@@ -29,6 +29,9 @@ from homeassistant.helpers.selector import (
 
 from .const import (
     CONF_CHANNELS,
+    CONF_EVENTS,
+    DEFAULT_ENABLED_EVENTS,
+    EVENT_CLASSES,
     CONF_RTSP_PORT,
     CONF_SNAPSHOT_STREAM,
     CONF_STREAM,
@@ -44,6 +47,31 @@ from .const import (
 from .isapi import AuthError, ConnectionFailed, HikvisionError, HikvisionISAPI
 
 _LOGGER = logging.getLogger(__name__)
+
+# Readable names for the options screen. Mirrors the entity translations, which
+# the flow cannot reach.
+EVENT_LABELS = {
+    "VMD": "Motion",
+    "linedetection": "Line crossing",
+    "fielddetection": "Intrusion",
+    "tamperdetection": "Tampering",
+    "videoloss": "Video loss",
+    "facedetection": "Face detected",
+    "faceSnap": "Face captured",
+    "scenechangedetection": "Scene change",
+    "IO": "Alarm input",
+    "softIO": "Software alarm input",
+    "PIR": "PIR",
+    "regionEntrance": "Region entrance",
+    "regionExiting": "Region exit",
+    "diskfull": "Disk full",
+    "diskerror": "Disk error",
+    "nicbroken": "Network down",
+    "ipconflict": "IP conflict",
+    "illaccess": "Illegal login",
+    "recordingfailure": "Recording failure",
+    "badvideo": "Video quality problem",
+}
 
 
 async def _async_probe(hass, data: Mapping[str, Any]) -> HikvisionISAPI:
@@ -160,7 +188,7 @@ class HikvisionConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class HikvisionOptionsFlow(OptionsFlow):
-    """Pick which channels to expose and which stream each camera uses."""
+    """Pick which channels and events to expose, and which stream to use."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
@@ -176,6 +204,21 @@ class HikvisionOptionsFlow(OptionsFlow):
         ]
         current = self.config_entry.options
 
+        # Only offer what this device actually declares; a capable NVR supports
+        # a lot of event types and most people want a handful of them.
+        declared: set[str] = set()
+        if coordinator:
+            for events in coordinator.api.event_capabilities.values():
+                declared |= events
+        declared &= EVENT_CLASSES.keys()
+        event_options = [
+            SelectOptionDict(value=event, label=EVENT_LABELS.get(event, event))
+            for event in sorted(declared, key=lambda e: EVENT_LABELS.get(e, e))
+        ]
+        default_events = current.get(
+            CONF_EVENTS, sorted(declared & DEFAULT_ENABLED_EVENTS)
+        )
+
         schema = vol.Schema(
             {
                 vol.Required(
@@ -186,6 +229,13 @@ class HikvisionOptionsFlow(OptionsFlow):
                 ): SelectSelector(
                     SelectSelectorConfig(
                         options=options, multiple=True, mode=SelectSelectorMode.LIST
+                    )
+                ),
+                vol.Optional(CONF_EVENTS, default=default_events): SelectSelector(
+                    SelectSelectorConfig(
+                        options=event_options,
+                        multiple=True,
+                        mode=SelectSelectorMode.LIST,
                     )
                 ),
                 vol.Required(

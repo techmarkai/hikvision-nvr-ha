@@ -152,6 +152,7 @@ const STYLE = `
     transform: translateX(-50%);
   }
   .timeline .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--divider-color); }
+  .timeline { user-select: none; touch-action: none; }
   .empty { padding: 24px; text-align: center; color: var(--secondary-text-color); font-size: 13px; }
   .err { padding: 12px; color: var(--error-color); font-size: 13px; }
 `;
@@ -176,6 +177,10 @@ class HikvisionNvrCard extends HTMLElement {
     this._blocks = [];
     this._snapshotUrls = new Map();
     this._clipSeconds = DEFAULT_CLIP_SECONDS;
+    // Visible slice of the day, as fractions 0..1. Zoom narrows it, pan
+    // slides it. The blocks always cover the whole day, so zooming never
+    // needs another round trip to the NVR.
+    this._view = { from: 0, to: 1 };
     this._timers = [];
     this._error = null;
     this._loading = true;
@@ -298,6 +303,7 @@ class HikvisionNvrCard extends HTMLElement {
     const end = new Date(y, m - 1, d, 23, 59, 59);
     this._dayStart = start;
     this._dayEnd = end;
+    this._view = { from: 0, to: 1 };
     this._blocks = [];
     this._render();
     try {
@@ -453,33 +459,48 @@ class HikvisionNvrCard extends HTMLElement {
     this._renderStage(card.querySelector("#stage"));
   }
 
+  /** Fraction 0..1 across the whole day -> percent across the visible view. */
+  _toView(fraction) {
+    const { from, to } = this._view;
+    return ((fraction - from) / (to - from)) * 100;
+  }
+
   _playbackControls() {
-    const width = (block) => {
-      const span = this._dayEnd - this._dayStart;
-      return {
-        left: ((block.start - this._dayStart) / span) * 100,
-        width: Math.max(((block.end - block.start) / span) * 100, 0.3),
-      };
-    };
+    const span = this._dayEnd - this._dayStart;
+    const asFraction = (time) => (time - this._dayStart) / span;
+
     const blocks = this._blocks
       .map((block) => {
-        const { left, width: w } = width(block);
-        return `<div class="block ${block.motion ? "motion" : ""}" style="left:${left}%;width:${w}%"></div>`;
+        const left = this._toView(asFraction(block.start));
+        const right = this._toView(asFraction(block.end));
+        if (right < -5 || left > 105) return ""; // scrolled out of view
+        const width = Math.max(right - left, 0.3);
+        return `<div class="block ${block.motion ? "motion" : ""}" style="left:${left}%;width:${width}%"></div>`;
       })
       .join("");
-    const ticks = Array.from({ length: 24 }, (_, hour) => {
-      const left = (hour / 24) * 100;
-      return (
-        `<div class="tick" style="left:${left}%"></div>` +
-        (hour % 6 === 0 ? `<span style="left:${left}%">${pad(hour)}</span>` : "")
-      );
-    }).join("");
+
+    // Label density follows the zoom: every 6 hours when showing the day,
+    // down to half-hours when zoomed right in.
+    const visibleHours = (this._view.to - this._view.from) * 24;
+    const step =
+      visibleHours > 12 ? 6 : visibleHours > 6 ? 2 : visibleHours > 2 ? 1 : 0.5;
+    const ticks = [];
+    for (let hour = 0; hour <= 24; hour += step) {
+      const left = this._toView(hour / 24);
+      if (left < 0 || left > 100) continue;
+      ticks.push(`<div class="tick" style="left:${left}%"></div>`);
+      const label = Number.isInteger(hour)
+        ? pad(hour)
+        : `${pad(Math.floor(hour))}:30`;
+      ticks.push(`<span style="left:${left}%">${label}</span>`);
+    }
+
+    const cursorAt = this._cursor ? asFraction(this._cursor) : null;
     const cursor =
-      this._cursor && this._cursor >= this._dayStart && this._cursor <= this._dayEnd
-        ? `<div class="cursor" style="left:${
-            ((this._cursor - this._dayStart) / (this._dayEnd - this._dayStart)) * 100
-          }%"></div>`
+      cursorAt !== null && cursorAt >= this._view.from && cursorAt <= this._view.to
+        ? `<div class="cursor" style="left:${this._toView(cursorAt)}%"></div>`
         : "";
+    const zoomed = this._view.to - this._view.from < 0.999;
 
     return `
       <div class="controls">
@@ -499,6 +520,7 @@ class HikvisionNvrCard extends HTMLElement {
               }>${o.label}</option>`
           ).join("")}
         </select>
+        <button class="icon-btn" id="zoomout" ${zoomed ? "" : "disabled"} title="Show the whole day">Whole day</button>
         <button class="icon-btn" id="download" ${this._downloadUrl ? "" : "disabled"}>Download</button>
       </div>
       <div class="timeline" id="timeline">
@@ -516,15 +538,93 @@ class HikvisionNvrCard extends HTMLElement {
       this._loadTimeline();
     });
 
-    const seek = (event) => {
-      const timeline = card.querySelector("#timeline");
+    const timeline = card.querySelector("#timeline");
+    const MIN_SPAN = 2 / (24 * 60); // two minutes, as a fraction of a day
+
+    /** Where along the whole day a pointer is, 0..1. */
+    const pointerFraction = (event) => {
       const rect = timeline.getBoundingClientRect();
       const ratio = Math.min(Math.max((event.clientX - rect.left) / rect.width, 0), 1);
-      this._playFrom(
-        new Date(this._dayStart.getTime() + ratio * (this._dayEnd - this._dayStart))
-      );
+      const { from, to } = this._view;
+      return from + ratio * (to - from);
     };
-    card.querySelector("#timeline").addEventListener("click", seek);
+
+    const clampView = (from, span) => {
+      const width = Math.min(Math.max(span, MIN_SPAN), 1);
+      const start = Math.min(Math.max(from, 0), 1 - width);
+      this._view = { from: start, to: start + width };
+      this._render();
+    };
+
+    timeline.addEventListener("click", (event) => {
+      if (this._panned) return; // the click that ends a drag is not a seek
+      this._playFrom(
+        new Date(
+          this._dayStart.getTime() +
+            pointerFraction(event) * (this._dayEnd - this._dayStart)
+        )
+      );
+    });
+
+    // Wheel zooms about the pointer, so the moment under the cursor stays put.
+    timeline.addEventListener(
+      "wheel",
+      (event) => {
+        event.preventDefault();
+        const anchor = pointerFraction(event);
+        const { from, to } = this._view;
+        const span = (to - from) * (event.deltaY > 0 ? 1.25 : 0.8);
+        clampView(anchor - (anchor - from) * (span / (to - from)), span);
+      },
+      { passive: false }
+    );
+
+    // Drag to pan; two fingers to pinch.
+    let drag = null;
+    const points = new Map();
+    timeline.addEventListener("pointerdown", (event) => {
+      points.set(event.pointerId, event.clientX);
+      timeline.setPointerCapture(event.pointerId);
+      drag = { x: event.clientX, view: { ...this._view } };
+      this._panned = false;
+    });
+    timeline.addEventListener("pointermove", (event) => {
+      if (!points.has(event.pointerId)) return;
+      points.set(event.pointerId, event.clientX);
+      const width = timeline.getBoundingClientRect().width;
+
+      if (points.size >= 2) {
+        const [a, b] = [...points.values()];
+        const separation = Math.abs(a - b) / width;
+        if (this._pinch) {
+          const { from, to } = this._view;
+          const centre = (from + to) / 2;
+          const span = ((to - from) * this._pinch) / Math.max(separation, 0.01);
+          clampView(centre - span / 2, span);
+        }
+        this._pinch = separation;
+        this._panned = true;
+        return;
+      }
+
+      if (!drag) return;
+      const moved = (event.clientX - drag.x) / width;
+      if (Math.abs(moved) > 0.005) this._panned = true;
+      const span = drag.view.to - drag.view.from;
+      clampView(drag.view.from - moved * span, span);
+    });
+    const release = (event) => {
+      points.delete(event.pointerId);
+      if (points.size < 2) this._pinch = null;
+      if (points.size === 0) drag = null;
+    };
+    timeline.addEventListener("pointerup", release);
+    timeline.addEventListener("pointercancel", release);
+
+    card.querySelector("#zoomout").addEventListener("click", () => {
+      this._view = { from: 0, to: 1 };
+      this._render();
+    });
 
     const step = (direction) => {
       if (!this._blocks.length) return;

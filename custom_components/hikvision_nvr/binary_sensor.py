@@ -14,6 +14,7 @@ from homeassistant.helpers.event import async_call_later
 
 from .const import (
     CONF_CHANNELS,
+    CONF_EVENTS,
     DEFAULT_ENABLED_EVENTS,
     EVENT_AUTO_OFF,
     EVENT_CLASSES,
@@ -45,16 +46,25 @@ async def async_setup_entry(
         if enabled is None or str(c.id) in enabled
     }
 
+    # Which event types the user wants at all. Unset means "the sensible
+    # default set"; an explicit empty list means "none, thank you".
+    chosen = entry.options.get(CONF_EVENTS)
+    wanted = set(chosen) if chosen is not None else set(EVENT_CLASSES)
+
     known: set[tuple[int, str]] = set()
     entities: list[BinarySensorEntity] = []
 
     for channel in channels.values():
         entities.append(HikvisionChannelOnline(coordinator, channel))
         for event_type in sorted(
-            (channel.events & EVENT_CLASSES.keys()) or FALLBACK_EVENTS
+            ((channel.events & EVENT_CLASSES.keys()) or FALLBACK_EVENTS) & wanted
         ):
             known.add((channel.id, event_type))
-            entities.append(HikvisionBinarySensor(coordinator, channel, event_type))
+            entities.append(
+                HikvisionBinarySensor(
+                    coordinator, channel, event_type, enabled_by_default=chosen is not None
+                )
+            )
 
     # Disk health, straight from the NVR's own assessment.
     for disk in coordinator.data.get("storage", []):
@@ -62,10 +72,14 @@ async def async_setup_entry(
 
     # Channel 0 is the NVR itself: disk, network, recording failures.
     for event_type in sorted(
-        coordinator.api.event_capabilities.get(0, set()) & EVENT_CLASSES.keys()
+        coordinator.api.event_capabilities.get(0, set()) & EVENT_CLASSES.keys() & wanted
     ):
         known.add((0, event_type))
-        entities.append(HikvisionBinarySensor(coordinator, None, event_type))
+        entities.append(
+            HikvisionBinarySensor(
+                coordinator, None, event_type, enabled_by_default=chosen is not None
+            )
+        )
 
     async_add_entities(entities)
 
@@ -73,7 +87,7 @@ async def async_setup_entry(
     def _on_event(event: Event) -> None:
         """Create an entity the first time an event type shows up."""
         key = ((event.channel or 0), event.type)
-        if key in known or event.type not in EVENT_CLASSES:
+        if key in known or event.type not in EVENT_CLASSES or event.type not in wanted:
             return
         channel = channels.get(event.channel or 0)
         if event.channel and channel is None:
@@ -98,6 +112,7 @@ class HikvisionBinarySensor(HikvisionEntity, BinarySensorEntity):
         coordinator: HikvisionCoordinator,
         channel: Channel | None,
         event_type: str,
+        enabled_by_default: bool = False,
     ) -> None:
         super().__init__(coordinator, channel)
         self._event_type = event_type
@@ -114,7 +129,7 @@ class HikvisionBinarySensor(HikvisionEntity, BinarySensorEntity):
         # A capable device declares a lot. Create everything it can do, but only
         # switch on the ones most people want, so the entity list stays usable.
         self._attr_entity_registry_enabled_default = (
-            event_type in DEFAULT_ENABLED_EVENTS or channel is None
+            enabled_by_default or event_type in DEFAULT_ENABLED_EVENTS or channel is None
         )
         if channel is None:
             self._attr_entity_category = EntityCategory.DIAGNOSTIC
