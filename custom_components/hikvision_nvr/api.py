@@ -10,7 +10,6 @@ See docs/API.md for the full contract.
 
 from __future__ import annotations
 
-import inspect
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -529,7 +528,12 @@ def _create_stream_kwargs(label: str) -> dict[str, Any]:
     kwargs: dict[str, Any] = {
         "options": {"rtsp_flags": "prefer_tcp", "use_wallclock_as_timestamps": "1"}
     }
-    params = inspect.signature(create_stream).parameters
+    # Read parameter names off the code object, not inspect.signature: on
+    # Python 3.14 signature() evaluates annotations (PEP 649), and Home
+    # Assistant annotates dynamic_stream_settings under TYPE_CHECKING only, so
+    # inspecting it raises NameError.
+    code = create_stream.__code__
+    params = code.co_varnames[: code.co_argcount + code.co_kwonlyargcount]
     if "stream_label" in params:
         kwargs["stream_label"] = label
     if "dynamic_stream_settings" in params:
