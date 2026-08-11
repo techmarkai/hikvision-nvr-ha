@@ -49,6 +49,27 @@ async def main(host: str, user: str, password: str) -> None:
             )
         first = next((c for c in api.channels if c.online), api.channels[0])
 
+        capabilities = api.event_capabilities
+        assert capabilities, "device declared no event capabilities"
+        assert any(
+            "VMD" in events for events in capabilities.values()
+        ), "no channel declares motion detection"
+        for channel_id in sorted(capabilities):
+            label = "NVR" if channel_id == 0 else f"channel {channel_id}"
+            print(f"events {label:<11}: {', '.join(sorted(capabilities[channel_id]))}")
+        # Channels must have picked up their own capabilities.
+        assert any(c.events for c in api.channels), "capabilities not attached"
+        assert all(c.id != 0 for c in api.channels), "channel 0 is reserved for the NVR"
+
+        status = await api.async_get_system_status()
+        assert "uptime_seconds" in status, f"no uptime reported: {status}"
+        assert status["uptime_seconds"] > 0
+        print(
+            f"system      : up {status['uptime_seconds'] // 3600}h, "
+            f"cpu {status.get('cpu_percent')}%, "
+            f"mem {status.get('memory_used_mb')} MB"
+        )
+
         jpeg = await api.async_snapshot(first.id)
         assert jpeg[:2] == b"\xff\xd8", "snapshot is not a JPEG"
         print(f"snapshot    : ch{first.id} {len(jpeg)} bytes JPEG OK")

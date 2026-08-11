@@ -30,6 +30,27 @@ _LOGGER = logging.getLogger(__name__)
 _NS_RE = re.compile(r"\{[^}]*\}")
 _TIME_FMT = "%Y-%m-%dT%H:%M:%SZ"
 
+# Some firmwares name an event differently in /ISAPI/Event/triggers than in the
+# alert stream. Declared name -> name as it arrives on the wire.
+EVENT_ALIASES: dict[str, str] = {
+    "tamper": "tamperdetection",
+    "shelteralarm": "tamperdetection",
+}
+
+# Events that belong to the NVR itself rather than a camera. The alert stream
+# leaves channelID empty for these, and we file them against channel 0.
+DEVICE_EVENTS = frozenset(
+    {
+        "diskfull",
+        "diskerror",
+        "nicbroken",
+        "ipconflict",
+        "illaccess",
+        "recordingfailure",
+        "badvideo",
+    }
+)
+
 
 class HikvisionError(Exception):
     """Base error."""
@@ -57,6 +78,8 @@ class Channel:
     ip_address: str | None = None
     streams: list[int] = field(default_factory=lambda: [1, 2])
     ptz: bool = False
+    # Event types this channel declares support for, as reported by the device.
+    events: set[str] = field(default_factory=set)
 
     @property
     def track_id(self) -> int:
@@ -222,6 +245,8 @@ class HikvisionISAPI:
 
         self.device_info: dict[str, str] = {}
         self.channels: list[Channel] = []
+        # channel id (0 = the NVR itself) -> event types it declares.
+        self.event_capabilities: dict[int, set[str]] = {}
 
     # ------------------------------------------------------------------ HTTP
 
@@ -322,9 +347,10 @@ class HikvisionISAPI:
     # ------------------------------------------------------------ discovery
 
     async def async_connect(self) -> None:
-        """Load device info and the channel list. Call once on setup."""
+        """Load device info, channels and capabilities. Call once on setup."""
         await self.async_update_device_info()
         await self.async_update_channels()
+        await self.async_update_capabilities()
 
     async def async_update_device_info(self) -> dict[str, str]:
         root = await self.get_xml("/ISAPI/System/deviceInfo")
@@ -407,13 +433,82 @@ class HikvisionISAPI:
             except HikvisionError:
                 channel.ptz = False
 
+    async def async_update_capabilities(self) -> dict[int, set[str]]:
+        """Ask the device which events it supports, and on which channels.
+
+        /ISAPI/Event/triggers is the device's own declaration -- ids look like
+        ``VMD-3`` or ``tamper-1`` for a channel, and plain ``diskfull`` for the
+        NVR. Channel 0 collects the device-wide ones. Far better than probing
+        each event type, and it means we only create entities that can fire.
+        """
+        capabilities: dict[int, set[str]] = {}
+        try:
+            root = await self.get_xml("/ISAPI/Event/triggers")
+        except (HikvisionError, DET.ParseError):
+            _LOGGER.debug("%s does not expose /Event/triggers", self.host)
+            self.event_capabilities = capabilities
+            return capabilities
+
+        for node in root.findall("EventTrigger"):
+            event_type = _text(node, "eventType")
+            if not event_type:
+                continue
+            event_type = EVENT_ALIASES.get(event_type, event_type)
+            trigger_id = _text(node, "id")
+            channel_raw = _text(node, "videoInputChannelID") or _text(
+                node, "dynVideoInputChannelID"
+            )
+            if not channel_raw:
+                # Fall back to the numeric suffix of the id ("VMD-3" -> 3).
+                match = re.search(r"-(\d+)$", trigger_id)
+                channel_raw = match.group(1) if match else ""
+            channel = (
+                int(channel_raw)
+                if channel_raw.isdigit() and event_type not in DEVICE_EVENTS
+                else 0
+            )
+            capabilities.setdefault(channel, set()).add(event_type)
+
+        self.event_capabilities = capabilities
+        by_id = {channel.id: channel for channel in self.channels}
+        for channel_id, events in capabilities.items():
+            if channel := by_id.get(channel_id):
+                channel.events = events
+        return capabilities
+
+    async def async_get_system_status(self) -> dict[str, Any]:
+        """Uptime and resource use. Absent on some firmwares, so never fatal."""
+        try:
+            root = await self.get_xml("/ISAPI/System/status")
+        except (HikvisionError, DET.ParseError):
+            return {}
+
+        def number(path: str) -> float | None:
+            raw = _text(root, path)
+            try:
+                return float(raw)
+            except ValueError:
+                return None
+
+        status: dict[str, Any] = {}
+        if (uptime := number("deviceUpTime")) is not None:
+            status["uptime_seconds"] = int(uptime)
+        if (cpu := number("CPUList/CPU/cpuUtilization")) is not None:
+            status["cpu_percent"] = cpu
+        if (memory := number("MemoryList/Memory/memoryUsage")) is not None:
+            status["memory_used_mb"] = round(memory, 1)
+        if (available := number("MemoryList/Memory/memoryAvailable")) is not None:
+            status["memory_available_mb"] = round(available, 1)
+        return status
+
     async def async_refresh_status(self) -> dict[str, Any]:
-        """Cheap periodic poll: channel online state + storage health."""
+        """Cheap periodic poll: channel state, storage health, system status."""
         by_id = {channel.id: channel for channel in self.channels}
         await self._async_apply_channel_status(by_id)
         return {
             "channels": {c.id: c.online for c in self.channels},
             "storage": await self.async_get_storage(),
+            "system": await self.async_get_system_status(),
         }
 
     async def async_get_storage(self) -> list[dict[str, Any]]:

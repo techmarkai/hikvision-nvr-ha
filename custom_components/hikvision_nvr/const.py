@@ -30,6 +30,10 @@ SCAN_INTERVAL = timedelta(seconds=60)
 EVENT_AUTO_OFF = timedelta(seconds=15)
 
 # Event types we expose as binary sensors, mapped to HA device classes.
+#
+# The device declares which of these it actually supports, per channel, at
+# /ISAPI/Event/triggers -- see HikvisionISAPI.async_update_capabilities. This
+# table only decides how a supported event is presented.
 EVENT_CLASSES: dict[str, str] = {
     "VMD": "motion",
     "linedetection": "motion",
@@ -39,7 +43,9 @@ EVENT_CLASSES: dict[str, str] = {
     "attendedBaggage": "motion",
     "unattendedBaggage": "motion",
     "facedetection": "occupancy",
+    "faceSnap": "occupancy",
     "peopleDetection": "occupancy",
+    "scenechangedetection": "tamper",
     "videoloss": "problem",
     "tamperdetection": "tamper",
     "shelteralarm": "tamper",
@@ -49,9 +55,18 @@ EVENT_CLASSES: dict[str, str] = {
     "ipconflict": "problem",
     "illaccess": "problem",
     "badvideo": "problem",
+    "recordingfailure": "problem",
     "PIR": "motion",
     "IO": "motion",
+    "softIO": "motion",
 }
+
+# Created for every capable channel. Anything else the device declares is
+# created too, but disabled by default so the entity list stays workable --
+# users switch on what they care about.
+DEFAULT_ENABLED_EVENTS = frozenset(
+    {"VMD", "linedetection", "fielddetection", "tamperdetection", "videoloss"}
+)
 
 SIGNAL_EVENT = f"{DOMAIN}_event"
 
