@@ -108,38 +108,44 @@ fast.
 range, cancels the idle timer on re-request, and caps concurrency at 8. Streams
 stop 5 minutes after their last use.
 
-### Streaming latency: measured, and the WebRTC opportunity
+### Live view latency: WebRTC, measured
 
-Measured on the test rig, in-browser, time from mount to first decoded frame
-(`requestVideoFrameCallback`):
+Time from mounting the player to the first frame with real pixels
+(`videoWidth > 100 && readyState >= 2`), measured in the card's own stage:
 
 | Path | First frame |
 |---|---|
-| Our `/live` -> HA `stream` -> HLS (current) | 2.9s, 4.6s, 5.1s (median **4.6s**) |
-| WebRTC SDP answer from go2rtc (protocol level) | **0.29s** (session at 0.20s) |
+| Our `/live` -> HA `stream` -> HLS (was) | 2899, 4599, 5078 ms — median **4599** |
+| `ha-camera-stream` -> WebRTC via go2rtc (now) | 994, 1005, 1562, 4002 ms — median **1562** |
 
-go2rtc is present and the cameras advertise `frontend_stream_types: ["hls",
-"web_rtc"]`, so WebRTC should cut live startup by roughly an order of magnitude
-and remove a second ffmpeg per camera -- our `/live` builds its own stream
-alongside the one the camera entity already runs.
+Roughly 3x faster, with the best cases at ~1.0s, and it no longer starts a
+second stream (and second ffmpeg) beside the one the camera entity already runs.
 
-**It is not wired up, deliberately.** Driving `ha-camera-stream` from inside
-this card produced only a 2x2 placeholder video and no frames on any of three
-channels over 18s, while the same element built by hand in the console did
-deliver video (`ha-web-rtc-player`, 352x288). The difference has not been
-found. Shipping it black would trade 4.6s of latency for no picture at all, so
-the change was reverted after measurement -- which is the point of measuring.
+Three things had to be right, none of them obvious:
 
-Worth knowing for whoever picks this up:
+* `ha-camera-stream` takes its Home Assistant handles from **Lit contexts**
+  (`configContext`, `apiContext`, `connectionContext`), not from a `hass`
+  property. Setting `hass` does nothing. The contexts do reach into this card's
+  nested shadow DOM.
+* It is a Lit element, so it must be **attached before** `stateObj` is assigned;
+  properties set while detached are dropped on upgrade, leaving a black stage.
+* A watchdog falls back to the HLS path if nothing decodes within
+  `NATIVE_LIVE_TIMEOUT`, so a channel WebRTC cannot carry never shows black.
 
-* Attach `ha-camera-stream` **before** assigning `hass`/`stateObj`; it is a Lit
-  element and properties set while detached are dropped.
-* Half these channels are H.265 (1, 2, 3, 7) and half H.264 (4, 5, 6, 8).
-  Browsers do not decode H.265 over WebRTC, so those channels can only be
-  served by transcoding -- which costs more than it saves -- or by HLS.
-* `camera/capabilities` over the websocket reports what a camera really offers.
-* The camera entity id now comes from the entity registry, so a card can hand
-  the entity to Home Assistant's own player once this works.
+**Benchmarking trap, for whoever measures this next.** `_render()` replaces
+`ha-card.innerHTML`, so a harness that captures `#stage` *before* calling it
+then searches a detached node and always finds nothing. That mistake made a
+working build look broken and cost a release to revert and re-apply. Re-query
+the stage on every poll. Also leave several seconds between channel switches:
+tearing streams down and up every second measures the teardown, not the start.
+
+**Open question: transcoding cost.** Channels 1, 2, 3 and 7 are H.265, which
+browsers cannot decode over WebRTC, yet they negotiate WebRTC successfully --
+so go2rtc is very likely transcoding them. Only the selected camera streams at
+a time (the wall is JPEG snapshots), so it is one transcode at most, and the
+card defaults to the sub-stream. Setting **Live quality** to the main stream on
+an H.265 channel would ask it to transcode 2560x1440, which has not been
+measured and should be before anyone recommends it.
 
 ### Why playback does not use the stream component
 These NVRs record a **G.722.1** audio track. PyAV cannot name that codec, so
