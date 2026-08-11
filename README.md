@@ -15,6 +15,12 @@ Developed and verified against a **DS-7608NI-K2/8P, firmware V4.40.015, 8
 channels**. Capabilities are read from the device rather than assumed, so other
 ISAPI models work to the extent their firmware exposes the same surfaces.
 
+<p align="center">
+  <img src="docs/images/card-live.png" alt="The card in live view: one channel large, the rest as a strip below" width="480">
+  &nbsp;
+  <img src="docs/images/setup-dialog.png" alt="Adding an NVR from the Home Assistant UI" width="420">
+</p>
+
 ## What you get
 
 | | |
