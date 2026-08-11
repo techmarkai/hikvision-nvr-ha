@@ -10,6 +10,7 @@ See docs/API.md for the full contract.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from datetime import datetime, timedelta
 from typing import Any
@@ -400,6 +401,11 @@ class PlaybackView(_BaseView):
                 "start": start.isoformat(),
                 "end": end.isoformat(),
                 "duration": int((end - start).total_seconds()),
+                # Preferred: fragmented MP4, signable, and unaffected by the
+                # G.722.1 audio track that breaks HA's HLS worker.
+                "mp4_url": (
+                    f"{base}/clip/{start.timestamp():.0f}/{end.timestamp():.0f}.mp4"
+                ),
                 "hls_url": stream.endpoint_url(HLS_PROVIDER),
                 "download_url": (
                     f"{base}/download?start={start.isoformat()}&end={end.isoformat()}"
@@ -445,6 +451,80 @@ class DownloadView(_BaseView):
         async for chunk in coordinator.api.async_download_stream(uri):
             await response.write(chunk)
         await response.write_eof()
+        return response
+
+
+class ClipView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/clip/{start}/{end}.mp4
+
+    Fragmented MP4, remuxed live by ffmpeg and streamed straight to the player.
+
+    Playback deliberately does not go through Home Assistant's stream
+    component. These NVRs record a G.722.1 audio track, PyAV cannot name that
+    codec, and HA's stream worker dies on it with
+    "'AudioStream' object has no attribute 'name'" -- so HLS playback produces a
+    player stuck at 0:00. Dropping audio (-an) sidesteps it entirely, and
+    fragmented MP4 starts faster than HLS because there is no segmenting step.
+
+    Times are Unix seconds in the path, not the query string, because signed
+    URLs (auth/sign_path) sign an empty parameter list -- a query would break
+    the signature that lets <video src> load this without a header.
+    """
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/clip/{start}/{end}.mp4"
+    name = "api:hikvision_nvr:clip"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str, start: str, end: str
+    ) -> web.StreamResponse:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass, device_id)
+        chan = _get_channel(coordinator, channel)
+        try:
+            start_dt = dt_util.utc_from_timestamp(float(start))
+            end_dt = dt_util.utc_from_timestamp(float(end))
+        except ValueError:
+            raise web.HTTPBadRequest(reason="start and end must be epoch seconds") from None
+        if not timedelta(0) < end_dt - start_dt <= timedelta(hours=2):
+            raise web.HTTPBadRequest(reason="clip must be 0-2 hours long")
+
+        from homeassistant.components.ffmpeg import get_ffmpeg_manager
+
+        source = coordinator.api.playback_rtsp_url(chan.id, start_dt, end_dt)
+        process = await asyncio.create_subprocess_exec(
+            get_ffmpeg_manager(hass).binary,
+            "-hide_banner", "-loglevel", "error",
+            "-rtsp_transport", "tcp",
+            "-i", source,
+            "-an",                      # see the docstring: HA/PyAV vs G.722.1
+            "-c:v", "copy",             # no transcode; the NVR's bitstream as-is
+            "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "pipe:1",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+
+        response = web.StreamResponse(
+            headers={"Content-Type": "video/mp4", "Cache-Control": "no-store"}
+        )
+        await response.prepare(request)
+        try:
+            while chunk := await process.stdout.read(65536):
+                await response.write(chunk)
+            await response.write_eof()
+        except (ConnectionResetError, asyncio.CancelledError):
+            # Viewer seeked or closed the card; nothing to report.
+            pass
+        finally:
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
+        if process.returncode not in (0, None, -9):
+            _LOGGER.warning(
+                "ffmpeg exited %s for channel %s clip", process.returncode, chan.id
+            )
         return response
 
 
@@ -626,6 +706,7 @@ _VIEWS = (
     LiveView,
     PlaybackView,
     DownloadView,
+    ClipView,
     EventsView,
     PtzView,
 )

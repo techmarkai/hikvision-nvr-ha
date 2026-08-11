@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.4.2";
+const CARD_VERSION = "1.5.0";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -309,7 +309,9 @@ class HikvisionNvrCard extends HTMLElement {
           `?start=${encodeURIComponent(from.toISOString())}` +
           `&end=${encodeURIComponent(to.toISOString())}`
       );
-      this._playbackUrl = data.hls_url;
+      // mp4_url, not hls_url: these recordings carry a G.722.1 audio track that
+      // crashes Home Assistant's HLS worker, and fragmented MP4 starts sooner.
+      this._playbackUrl = data.mp4_url || data.hls_url;
       this._downloadUrl = data.download_url;
       this._error = null;
     } catch (err) {
@@ -513,8 +515,28 @@ class HikvisionNvrCard extends HTMLElement {
       ? this._hass.hassUrl(url)
       : new URL(url, window.location.origin).href;
 
-    await ensurePlayer();
     stage.innerHTML = "";
+
+    // Playback is a plain fragmented-MP4 file: <video> plays it directly, with
+    // native seeking, and needs no HLS machinery at all.
+    if (this._mode === "playback") {
+      const { path } = await this._hass.callWS({
+        type: "auth/sign_path",
+        path: url,
+        expires: 3600,
+      });
+      const video = document.createElement("video");
+      video.src = this._hass.hassUrl ? this._hass.hassUrl(path) : path;
+      video.autoplay = true;
+      video.muted = true;
+      video.controls = true;
+      video.playsInline = true;
+      video.preload = "auto";
+      stage.appendChild(video);
+      return;
+    }
+
+    await ensurePlayer();
     if (customElements.get("ha-hls-player")) {
       const player = document.createElement("ha-hls-player");
       player.hass = this._hass;

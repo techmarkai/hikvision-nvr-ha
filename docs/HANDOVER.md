@@ -106,6 +106,16 @@ fast.
 range, cancels the idle timer on re-request, and caps concurrency at 8. Streams
 stop 5 minutes after their last use.
 
+### Why playback does not use the stream component
+These NVRs record a **G.722.1** audio track. PyAV cannot name that codec, so
+Home Assistant's `stream/worker.py` dies with `'AudioStream' object has no
+attribute 'name'` and the player sits at 0:00 forever. Live view is unaffected
+because the live RTSP stream carries no audio. Playback therefore goes through
+`ClipView`: ffmpeg remuxes the NVR's playback RTSP into fragmented MP4 with
+`-an`, streamed straight to a `<video>` tag. No transcode, no segmenting, lower
+latency than HLS, and signable because its times live in the path rather than
+the query. `export_recording` drops audio for the same reason.
+
 ### Events
 One long-lived HTTP connection consumes the multipart alert stream. It is an
 entry-owned background task with exponential backoff (5 s → 5 min). Events

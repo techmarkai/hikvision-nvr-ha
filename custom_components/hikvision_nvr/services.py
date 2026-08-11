@@ -171,7 +171,10 @@ def async_setup_services(hass: HomeAssistant) -> None:
             "-loglevel", "error",
             "-rtsp_transport", "tcp",
             "-i", source,
-            "-c", "copy",
+            # G.722.1 has no valid MP4 mapping and PyAV/ffmpeg choke on it;
+            # video only keeps the export universally playable.
+            "-an",
+            "-c:v", "copy",
             "-movflags", "+faststart",
             "-y", str(target),
             stdout=asyncio.subprocess.DEVNULL,

@@ -255,11 +255,19 @@ Plays back a time range from the NVR's disks over HLS.
   "start": "2026-08-10T00:00:24+00:00",
   "end": "2026-08-10T00:02:15+00:00",
   "duration": 111,
+  "mp4_url": "/api/hikvision_nvr/…/1/clip/1786419624/1786419735.mp4",
   "hls_url": "/api/hls/1a2b…/master_playlist.m3u8",
   "download_url": "/api/hikvision_nvr/…/1/download?start=…&end=…",
   "rtsp_url": "rtsp://192.168.1.222:554/Streaming/tracks/101/?starttime=20260810T000024Z&endtime=20260810T000215Z"
 }
 ```
+
+**Prefer `mp4_url`.** It is a fragmented MP4 remuxed live by ffmpeg: it plays in
+a bare `<video>` tag, seeks natively, starts sooner than HLS, and is signable
+with `auth/sign_path` (its times are in the path, not the query). `hls_url` is
+kept for HLS-only clients, but note that Home Assistant's stream worker crashes
+on recordings carrying a G.722.1 audio track — common on these NVRs — so HLS
+playback can stall at 0:00 where `mp4_url` works. The MP4 path drops audio.
 
 Seeking = calling this again with a new `start`. Asking for a range that is
 already playing returns the same stream instead of starting a second one, which
@@ -282,6 +290,19 @@ like `Garage_entrance_20260810_000024-000215.mp4`.
 > The NVR emits its own MP4 muxing here. If a target player rejects it, use the
 > `hikvision_nvr.export_recording` service instead — that remuxes through ffmpeg
 > and produces a strictly conformant, fast-start MP4.
+
+---
+
+### `GET /api/hikvision_nvr/{device_id}/{channel}/clip/{start}/{end}.mp4`
+
+The recording as a fragmented MP4, video only, streamed as ffmpeg remuxes it.
+`start` and `end` are **Unix seconds in the path** so the URL can be signed and
+handed straight to a player. Max 2 hours.
+
+```html
+<video src="/api/hikvision_nvr/DS-7608…/1/clip/1786419624/1786419735.mp4?authSig=…"
+       autoplay muted controls playsinline></video>
+```
 
 ---
 
