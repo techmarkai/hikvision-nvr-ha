@@ -525,8 +525,12 @@ def _create_stream_kwargs(label: str) -> dict[str, Any]:
     what it takes and pass only that -- a wrong guess here is a hard 500 on
     every live view and playback request.
     """
+    # These are Home Assistant's own option names (STREAM_OPTIONS_SCHEMA), not
+    # raw ffmpeg flags -- it validates them and converts to PyAV options itself.
+    # TCP because Hikvision over UDP drops packets under load;
+    # use_wallclock_as_timestamps because these NVRs emit erratic DTS.
     kwargs: dict[str, Any] = {
-        "options": {"rtsp_flags": "prefer_tcp", "use_wallclock_as_timestamps": "1"}
+        "options": {"rtsp_transport": "tcp", "use_wallclock_as_timestamps": True}
     }
     # Read parameter names off the code object, not inspect.signature: on
     # Python 3.14 signature() evaluates annotations (PEP 649), and Home
