@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.5.4";
+const CARD_VERSION = "1.6.0";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -340,12 +340,30 @@ class HikvisionNvrCard extends HTMLElement {
 
   async _download() {
     if (!this._downloadUrl) return;
-    const { path } = await this._hass.callWS({
-      type: "auth/sign_path",
-      path: this._downloadUrl,
-      expires: 600,
-    });
-    window.open(path, "_blank");
+    try {
+      // sign_path signs the path with an empty parameter list, so only a
+      // path-only URL can be signed -- the clip endpoint puts its times in the
+      // path for exactly this reason.
+      const { path } = await this._hass.callWS({
+        type: "auth/sign_path",
+        path: this._downloadUrl,
+        expires: 3600,
+      });
+      const channel = this._channels.find((c) => c.id === this._selected);
+      const stamp = this._cursor ? hhmmss(this._cursor).replace(/:/g, "") : "clip";
+      const a = document.createElement("a");
+      a.href = this._hass.hassUrl ? this._hass.hassUrl(path) : path;
+      // Same-origin, so the browser honours this and saves instead of playing.
+      a.download = `${(channel ? channel.name : "camera").replace(/\s+/g, "_")}_${
+        this._date
+      }_${stamp}.mp4`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+    } catch (err) {
+      this._error = `Download failed: ${errText(err)}`;
+      this._render();
+    }
   }
 
   // ---------------------------------------------------------------- render

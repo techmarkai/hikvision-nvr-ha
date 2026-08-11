@@ -391,30 +391,36 @@ class PlaybackView(_BaseView):
         if end - start > timedelta(hours=6):
             raise web.HTTPBadRequest(reason="playback range must not exceed 6 hours")
 
-        source = coordinator.api.playback_rtsp_url(chan.id, start, end)
-        key = f"pb-{coordinator.slug}-{chan.id}-{start.timestamp()}-{end.timestamp()}"
-        stream = await _async_get_stream(hass, key, source)
         base = f"/api/hikvision_nvr/{coordinator.slug}/{chan.id}"
-        return self.json(
-            {
-                "channel": chan.id,
-                "start": start.isoformat(),
-                "end": end.isoformat(),
-                "duration": int((end - start).total_seconds()),
-                # Preferred: fragmented MP4, signable, and unaffected by the
-                # G.722.1 audio track that breaks HA's HLS worker.
-                "mp4_url": (
-                    f"{base}/clip/{start.timestamp():.0f}/{end.timestamp():.0f}.mp4"
-                ),
-                "hls_url": stream.endpoint_url(HLS_PROVIDER),
-                "download_url": (
-                    f"{base}/download?start={start.isoformat()}&end={end.isoformat()}"
-                ),
-                "rtsp_url": coordinator.api.playback_rtsp_url(
-                    chan.id, start, end, credentials=False
-                ),
-            }
-        )
+        clip = f"{base}/clip/{start.timestamp():.0f}/{end.timestamp():.0f}.mp4"
+        payload = {
+            "channel": chan.id,
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+            "duration": int((end - start).total_seconds()),
+            # Play and save both go through the clip endpoint: real MP4, and a
+            # path-only URL, so auth/sign_path can sign it for a bare <video> or
+            # a download link.
+            "mp4_url": clip,
+            "download_url": clip,
+            "rtsp_url": coordinator.api.playback_rtsp_url(
+                chan.id, start, end, credentials=False
+            ),
+        }
+
+        # HLS only on request. Building it eagerly started a stream worker that
+        # dies on these recordings' G.722.1 audio track -- wasted ffmpeg and a
+        # traceback in the log on every single playback call.
+        if request.query.get("hls") in ("1", "true", "yes"):
+            source = coordinator.api.playback_rtsp_url(chan.id, start, end)
+            key = (
+                f"pb-{coordinator.slug}-{chan.id}"
+                f"-{start.timestamp()}-{end.timestamp()}"
+            )
+            stream = await _async_get_stream(hass, key, source)
+            payload["hls_url"] = stream.endpoint_url(HLS_PROVIDER)
+
+        return self.json(payload)
 
 
 class DownloadView(_BaseView):
@@ -512,8 +518,18 @@ class ClipView(_BaseView):
             stderr=asyncio.subprocess.PIPE,
         )
 
+        filename = (
+            f"{chan.name.replace(' ', '_')}_"
+            f"{dt_util.as_local(start_dt):%Y%m%d_%H%M%S}.mp4"
+        )
         response = web.StreamResponse(
-            headers={"Content-Type": "video/mp4", "Cache-Control": "no-store"}
+            headers={
+                "Content-Type": "video/mp4",
+                "Cache-Control": "no-store",
+                # inline so <video> plays it; the card's save button uses an
+                # <a download> anchor, which overrides this for a real download.
+                "Content-Disposition": f'inline; filename="{filename}"',
+            }
         )
         await response.prepare(request)
         disconnected = False
