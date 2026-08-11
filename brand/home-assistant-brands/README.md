@@ -1,13 +1,15 @@
-# Getting the integration icon into Home Assistant
+# Submitting the brand to home-assistant/brands (optional)
 
-Home Assistant does not read integration icons from the integration itself. It
-fetches them from `brands.home-assistant.io` by domain, and that content comes
-from the [home-assistant/brands](https://github.com/home-assistant/brands)
-repository. There is no local override — until the domain exists there, the
-integration page shows the default placeholder no matter what this repo ships.
+**You probably do not need this.** Home Assistant serves brand images directly
+from an integration that ships a `brand` directory, so the icon in
+`custom_components/hikvision_nvr/brand/` already appears on the integration
+page — see `homeassistant/components/brands/__init__.py`,
+`_serve_from_custom_integration`.
 
-Custom integrations *are* accepted: they live under `custom_integrations/`,
-alongside a thousand others.
+Submitting to [home-assistant/brands](https://github.com/home-assistant/brands)
+only matters if this integration is ever accepted into Home Assistant core, or
+if you want the image served from their CDN for other users. Custom integrations
+are accepted there, under `custom_integrations/`.
 
 ## Why this is not already submitted
 

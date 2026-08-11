@@ -17,6 +17,12 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont
 
 HERE = Path(__file__).parent
+# Home Assistant serves brand images straight from an integration that has a
+# "brand" directory (loader.Integration.has_branding), so this is the functional
+# location, not a copy: components/brands falls back through icon.png for every
+# other size and for the dark variants.
+BRAND = HERE.parent / "custom_components" / "hikvision_nvr" / "brand"
+PANEL = HERE.parent / "custom_components" / "hikvision_nvr" / "frontend"
 SUPERSAMPLE = 4  # draw big, shrink down: cheap anti-aliasing
 
 NAVY = (22, 32, 43, 255)
@@ -108,14 +114,20 @@ def draw_logo(icon: Image.Image, width: int = 512, height: int = 160) -> Image.I
 
 
 def main() -> None:
+    BRAND.mkdir(parents=True, exist_ok=True)
     icon = draw_icon()
-    icon.save(HERE / "icon.png")
-    icon.resize((512, 512), Image.LANCZOS).save(HERE / "icon@2x.png")
-    draw_logo(icon).save(HERE / "logo.png")
-    for name in ("icon.png", "icon@2x.png", "logo.png"):
-        path = HERE / name
+    icon.save(BRAND / "icon.png")
+    draw_icon(512).save(BRAND / "icon@2x.png")
+    draw_logo(icon).save(BRAND / "logo.png")
+    draw_logo(draw_icon(1024), 1024, 320).save(BRAND / "logo@2x.png")
+    # The panel toolbar loads its mark over HTTP, from the served frontend dir.
+    icon.resize((128, 128), Image.LANCZOS).save(PANEL / "icon.png")
+
+    for path in sorted(BRAND.iterdir()) + [PANEL / "icon.png"]:
         with Image.open(path) as image:
-            print(f"{name:14} {image.size[0]}x{image.size[1]}  {path.stat().st_size} B")
+            where = path.parent.name
+            print(f"{where}/{path.name:14} {image.size[0]}x{image.size[1]}"
+                  f"  {path.stat().st_size} B")
 
 
 if __name__ == "__main__":

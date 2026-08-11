@@ -212,7 +212,7 @@ logger:
 | Live view fine, playback black | Recording codec is H.265 | Same fix, or use `export_recording`. |
 | Motion sensors never fire | The trigger is linked to `record` but not `center` | Run `hikvision_nvr.enable_notifications`. Recording is untouched; it only adds the notification. Confirm with `GET /ISAPI/Event/triggers`. |
 | Card shows in a browser but not the mobile app | The app cached `index.html`, which is where `add_extra_js_url` injects the script | Fixed by also registering a Lovelace resource, delivered over the websocket. Failing that, Companion App → Debugging → Reset frontend cache. |
-| No icon on the integration page | Home Assistant fetches brand images from brands.home-assistant.io by domain | See `brand/home-assistant-brands/`. It needs a PR to home-assistant/brands, which their AI policy requires a human to open. |
+| No icon on the integration page | `custom_components/hikvision_nvr/brand/icon.png` is missing | Home Assistant serves brand images from an integration that has a `brand` directory (`Integration.has_branding`), via `/api/brands/integration/<domain>/icon.png`. Run `python brand/render.py` and restart. No PR to home-assistant/brands is needed. |
 | Timeline empty for a day | Nothing recorded, or the day predates the disk overwrite window | Cross-check with `search_recordings`. |
 | Playback stalls after ~6 h range | Deliberate server-side cap | Request a shorter range. |
 | Snapshots stop, live still works | Sub-stream disabled on that channel | Set the snapshot stream to main in Options. |

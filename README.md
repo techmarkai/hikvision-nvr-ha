@@ -1,4 +1,4 @@
-<img src="brand/logo.png" alt="Hikvision NVR for Home Assistant" width="420">
+<img src="custom_components/hikvision_nvr/brand/logo.png" alt="Hikvision NVR for Home Assistant" width="420">
 
 # Hikvision NVR for Home Assistant
 
@@ -124,17 +124,18 @@ The mark in `brand/` is original artwork for this project, not the Hikvision
 logo — that is Hikvision's trademark and not ours to redistribute. "Hikvision"
 appears here only to say which hardware this integration talks to.
 
-Home Assistant shows a vendor logo on the integration page from the
-[home-assistant/brands](https://github.com/home-assistant/brands) repository,
-which only serves integrations that ship with Home Assistant itself; custom
-integrations get the default placeholder. If this integration is ever accepted
-into core, that is where its brand image would go.
+The icon on **Settings → Devices & Services** comes from
+`custom_components/hikvision_nvr/brand/`. Home Assistant serves brand images
+straight from any integration that has a `brand` directory, so nothing needs to
+be published anywhere for it to appear. Only `icon.png` is required — Home
+Assistant falls back through it for the `@2x` and dark variants.
 
-To use your own artwork, replace `brand/icon.svg` and run `python brand/render.py`,
-or simply drop your own `brand/icon.png` and `brand/logo.png` in place.
+To use your own artwork, edit `brand/icon.svg` and run `python brand/render.py`,
+or drop your own PNGs into `custom_components/hikvision_nvr/brand/`.
 
-Ready-to-submit assets and instructions for getting the icon onto the
-integration page live in
+Submitting to [home-assistant/brands](https://github.com/home-assistant/brands)
+is therefore optional; it would only matter if this integration were ever
+accepted into Home Assistant core. Assets and instructions for that are in
 [`brand/home-assistant-brands/`](brand/home-assistant-brands/README.md).
 
 ## Licence
