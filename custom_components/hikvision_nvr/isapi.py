@@ -39,6 +39,15 @@ EVENT_ALIASES: dict[str, str] = {
     "shelteralarm": "tamperdetection",
 }
 
+# "Notify Surveillance Center" -- the linkage that pushes an event to the alert
+# stream. The id is literally "center"; a per-channel id is rejected.
+_CENTER = (
+    "<EventTriggerNotification><id>center</id>"
+    "<notificationMethod>center</notificationMethod>"
+    "</EventTriggerNotification>"
+)
+_LIST_CLOSE = "</EventTriggerNotificationList>"
+
 # Events that belong to the NVR itself rather than a camera. The alert stream
 # leaves channelID empty for these, and we file them against channel 0.
 DEVICE_EVENTS = frozenset(
@@ -891,30 +900,26 @@ class HikvisionISAPI:
             if "center" in methods:
                 continue
 
-            existing = "".join(
-                f"<EventTriggerNotification><id>{_text(n, 'id')}</id>"
-                f"<notificationMethod>{_text(n, 'notificationMethod')}</notificationMethod>"
-                "</EventTriggerNotification>"
-                for n in node.findall(
-                    "EventTriggerNotificationList/EventTriggerNotification"
-                )
-            )
-            body = (
-                '<?xml version="1.0" encoding="UTF-8"?>'
-                '<EventTriggerNotificationList version="2.0" '
-                'xmlns="http://www.isapi.org/ver20/XMLSchema">'
-                f"{existing}"
-                f"<EventTriggerNotification><id>center-{channel or 1}</id>"
-                "<notificationMethod>center</notificationMethod>"
-                "<notificationRecurrence>beginningandend</notificationRecurrence>"
-                "</EventTriggerNotification>"
-                "</EventTriggerNotificationList>"
-            )
+            # Send back the device's own document with one block added, rather
+            # than rebuilding it. Rebuilding dropped the <dynVideoInputID> the
+            # firmware puts on a record notification and numbered the new entry
+            # "center-3" where it wants plain "center": both are HTTP 400, and
+            # motion happened to survive it while line crossing did not.
+            path = f"/ISAPI/Event/triggers/{trigger_id}/notifications"
+            try:
+                document = (await (await self.request("GET", path)).text()).strip()
+            except HikvisionError as err:
+                # Some declared triggers have no notification sub-resource at
+                # all -- softIO and faceSnap answer 400 here. Nothing to fix
+                # and nothing the user can do, so this is not a warning.
+                _LOGGER.debug("%s has no notification list: %s", trigger_id, err)
+                continue
+            if _LIST_CLOSE not in document:
+                _LOGGER.debug("Unexpected notification document for %s", trigger_id)
+                continue
             try:
                 await self.request(
-                    "PUT",
-                    f"/ISAPI/Event/triggers/{trigger_id}/notifications",
-                    data=body,
+                    "PUT", path, data=document.replace(_LIST_CLOSE, _CENTER + _LIST_CLOSE)
                 )
             except HikvisionError as err:
                 _LOGGER.warning("Could not enable notifications on %s: %s", trigger_id, err)
