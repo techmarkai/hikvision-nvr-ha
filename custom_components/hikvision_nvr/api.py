@@ -20,6 +20,7 @@ from homeassistant.components.http import HomeAssistantView
 from homeassistant.components.stream import Stream, create_stream
 from homeassistant.components.stream.const import HLS_PROVIDER
 from homeassistant.core import HomeAssistant, callback
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
@@ -36,6 +37,19 @@ DATA_STREAMS = f"{DOMAIN}_playback_streams"
 
 
 # --------------------------------------------------------------------- utils
+
+
+def _camera_entity_id(hass: HomeAssistant, coordinator, channel_id: int) -> str | None:
+    """The real camera entity for a channel, from the registry.
+
+    Guessing "camera." + a slugified name breaks the moment a user renames an
+    entity, and the frontend needs the true id to hand the camera to Home
+    Assistant's own player -- which is what gets WebRTC instead of HLS.
+    """
+    registry = er.async_get(hass)
+    return registry.async_get_entity_id(
+        "camera", DOMAIN, f"{coordinator.device_id}_{channel_id}_camera"
+    )
 
 
 def _coordinators(hass: HomeAssistant) -> dict[str, HikvisionCoordinator]:
@@ -165,7 +179,7 @@ class DevicesView(_BaseView):
                             "ptz": c.ptz,
                             "streams": c.streams,
                             "ip_address": c.ip_address,
-                            "entity_id": f"camera.{c.name.lower().replace(' ', '_')}",
+                            "entity_id": _camera_entity_id(hass, coordinator, c.id),
                         }
                         for c in coordinator.api.channels
                     ],
@@ -197,6 +211,9 @@ class ChannelsView(_BaseView):
                         ),
                         "live_url": (
                             f"/api/hikvision_nvr/{coordinator.slug}/{c.id}/live"
+                        ),
+                        "entity_id": _camera_entity_id(
+                            request.app["hass"], coordinator, c.id
                         ),
                     }
                     for c in coordinator.api.channels

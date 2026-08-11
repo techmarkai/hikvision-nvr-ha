@@ -51,7 +51,10 @@ function ensurePlayer() {
         camera_view: "live",
       });
       card.remove?.();
-      await customElements.whenDefined("ha-hls-player");
+      await Promise.all([
+        customElements.whenDefined("ha-hls-player"),
+        customElements.whenDefined("ha-camera-stream"),
+      ]);
     })().catch(() => {
       /* fall back to a plain <video> below */
     });
@@ -702,8 +705,21 @@ class HikvisionNvrCard extends HTMLElement {
 
   async _renderStage(stage) {
     if (!stage || !this._selected) return;
-    const url =
+    const liveChannel =
       this._mode === "live"
+        ? this._channels.find((c) => c.id === this._selected)
+        : null;
+    // With a camera entity we hand the whole job to Home Assistant and never
+    // ask the NVR for an HLS stream at all.
+    const nativeLive = !!(
+      liveChannel &&
+      liveChannel.entity_id &&
+      this._hass.states[liveChannel.entity_id] &&
+      customElements.get("ha-camera-stream")
+    );
+    const url = nativeLive
+      ? `entity:${liveChannel.entity_id}`
+      : this._mode === "live"
         ? await this._liveUrl().catch((err) => {
             this._error = `Live view failed: ${errText(err)}`;
             return null;
@@ -728,9 +744,11 @@ class HikvisionNvrCard extends HTMLElement {
     // ha-hls-player only absolutises the URL when driven by `entityid`; given a
     // `url` it uses it verbatim and later does new URL(segment, url), which
     // throws "Invalid base URL" on a relative path.
-    const absolute = this._hass.hassUrl
-      ? this._hass.hassUrl(url)
-      : new URL(url, window.location.origin).href;
+    const absolute = url.startsWith("entity:")
+      ? url
+      : this._hass.hassUrl
+        ? this._hass.hassUrl(url)
+        : new URL(url, window.location.origin).href;
 
     stage.innerHTML = "";
 
@@ -757,6 +775,28 @@ class HikvisionNvrCard extends HTMLElement {
     }
 
     await ensurePlayer();
+
+    // Live view goes through Home Assistant's own camera element, which
+    // negotiates WebRTC via go2rtc and only falls back to HLS if that is
+    // unavailable. Asking for HLS ourselves was costing seconds: measured on
+    // the test rig, HLS reaches its first frame in ~4.6s while a WebRTC answer
+    // arrives in ~0.3s. It also stops us starting a second stream -- and so a
+    // second ffmpeg -- alongside the one the camera entity already runs.
+    const channel = this._channels.find((c) => c.id === this._selected);
+    if (channel && channel.entity_id && customElements.get("ha-camera-stream")) {
+      const stateObj = this._hass.states[channel.entity_id];
+      if (stateObj) {
+        const element = document.createElement("ha-camera-stream");
+        element.hass = this._hass;
+        element.stateObj = stateObj;
+        element.muted = true;
+        element.controls = false;
+        element.allowExoPlayer = true;
+        stage.appendChild(element);
+        return;
+      }
+    }
+
     if (customElements.get("ha-hls-player")) {
       const player = document.createElement("ha-hls-player");
       player.hass = this._hass;
