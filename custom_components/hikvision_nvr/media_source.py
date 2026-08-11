@@ -17,12 +17,13 @@ from homeassistant.components.media_source import (
     PlayMedia,
     Unresolvable,
 )
+from homeassistant.components.stream.const import HLS_PROVIDER
 from homeassistant.core import HomeAssistant
 from homeassistant.util import dt as dt_util
 
-from .api import _async_get_stream
+from .api import async_get_stream
 from .const import DOMAIN
-from .coordinator import HikvisionCoordinator
+from .coordinator import HikvisionCoordinator, async_coordinators
 from .isapi import HikvisionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -50,29 +51,24 @@ class HikvisionMediaSource(MediaSource):
     #   "<device>/<channel>/<YYYY-MM-DD>"   -> list segments
     #   "<device>/<channel>/<start>/<end>"  -> playable
 
-    def _coordinators(self) -> dict[str, HikvisionCoordinator]:
-        return {
-            entry.runtime_data.slug: entry.runtime_data
-            for entry in self.hass.config_entries.async_entries(DOMAIN)
-            if isinstance(getattr(entry, "runtime_data", None), HikvisionCoordinator)
-        }
-
     async def async_resolve_media(self, item: MediaSourceItem) -> PlayMedia:
         parts = item.identifier.split("/")
         if len(parts) != 4:
             raise Unresolvable(f"Not playable: {item.identifier}")
         device_id, channel, start_raw, end_raw = parts
-        coordinator = self._coordinators().get(device_id)
+        coordinator = async_coordinators(self.hass).get(device_id)
         if coordinator is None:
             raise Unresolvable(f"Unknown NVR {device_id}")
 
         start = dt_util.utc_from_timestamp(float(start_raw))
         end = dt_util.utc_from_timestamp(float(end_raw))
         source = coordinator.api.playback_rtsp_url(int(channel), start, end)
-        stream = await _async_get_stream(
+        stream = await async_get_stream(
             self.hass, f"pb-{device_id}-{channel}-{start_raw}-{end_raw}", source
         )
-        return PlayMedia(stream.endpoint_url("hls"), "application/vnd.apple.mpegurl")
+        return PlayMedia(
+            stream.endpoint_url(HLS_PROVIDER), "application/vnd.apple.mpegurl"
+        )
 
     async def async_browse_media(self, item: MediaSourceItem) -> BrowseMediaSource:
         identifier = item.identifier or ""
@@ -80,7 +76,7 @@ class HikvisionMediaSource(MediaSource):
 
         if not parts:
             return self._browse_root()
-        coordinator = self._coordinators().get(parts[0])
+        coordinator = async_coordinators(self.hass).get(parts[0])
         if coordinator is None:
             raise Unresolvable(f"Unknown NVR {parts[0]}")
         if len(parts) == 1:
@@ -127,7 +123,7 @@ class HikvisionMediaSource(MediaSource):
             "Hikvision NVR",
             children=[
                 self._node(coordinator.slug, coordinator.config_entry.title)
-                for coordinator in self._coordinators().values()
+                for coordinator in async_coordinators(self.hass).values()
             ],
         )
 

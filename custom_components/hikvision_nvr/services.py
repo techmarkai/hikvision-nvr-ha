@@ -31,7 +31,11 @@ from .const import (
     SERVICE_REBOOT,
     SERVICE_SEARCH_RECORDINGS,
 )
-from .coordinator import HikvisionCoordinator
+from .coordinator import (
+    HikvisionCoordinator,
+    async_coordinators,
+    async_find_coordinator,
+)
 from .isapi import HikvisionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -95,26 +99,12 @@ NOTIFICATIONS_SCHEMA = vol.Schema(
 
 def _resolve(hass: HomeAssistant, device_id: str | None) -> HikvisionCoordinator:
     """Find the target NVR. With one NVR configured, device_id is optional."""
-    coordinators = [
-        entry.runtime_data
-        for entry in hass.config_entries.async_entries(DOMAIN)
-        if isinstance(getattr(entry, "runtime_data", None), HikvisionCoordinator)
-    ]
-    if not coordinators:
+    if (coordinator := async_find_coordinator(hass, device_id)) is not None:
+        return coordinator
+    if not async_coordinators(hass):
         raise ServiceValidationError("No Hikvision NVR is configured")
     if device_id is None:
-        if len(coordinators) > 1:
-            raise ServiceValidationError(
-                "Several NVRs are configured; pass device_id"
-            )
-        return coordinators[0]
-    for coordinator in coordinators:
-        if device_id in (
-            coordinator.device_id,
-            coordinator.api.host,
-            coordinator.config_entry.entry_id,
-        ):
-            return coordinator
+        raise ServiceValidationError("Several NVRs are configured; pass device_id")
     raise ServiceValidationError(f"Unknown NVR '{device_id}'")
 
 

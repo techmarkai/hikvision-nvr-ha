@@ -31,6 +31,49 @@ _LOGGER = logging.getLogger(__name__)
 type HikvisionConfigEntry = ConfigEntry[HikvisionCoordinator]
 
 
+@callback
+def async_coordinators(hass: HomeAssistant) -> dict[str, HikvisionCoordinator]:
+    """Every loaded NVR, keyed by its URL-safe slug."""
+    return {
+        entry.runtime_data.slug: entry.runtime_data
+        for entry in hass.config_entries.async_entries(DOMAIN)
+        if isinstance(getattr(entry, "runtime_data", None), HikvisionCoordinator)
+    }
+
+
+@callback
+def async_find_coordinator(
+    hass: HomeAssistant, device_id: str | None
+) -> HikvisionCoordinator | None:
+    """Resolve an NVR from whatever the caller happens to know it by.
+
+    The REST API, the services and the media browser each accepted a slightly
+    different set of identifiers. They now share one: the slug, the raw serial,
+    the host, the config entry id, or its title. ``None`` picks the only
+    configured NVR -- the common case; with several that is ambiguous, so the
+    caller is told nothing matched and can explain why.
+    """
+    coordinators = async_coordinators(hass)
+    if device_id is None:
+        return next(iter(coordinators.values())) if len(coordinators) == 1 else None
+    if (found := coordinators.get(device_id)) is not None:
+        return found
+    return next(
+        (
+            coordinator
+            for coordinator in coordinators.values()
+            if device_id
+            in (
+                coordinator.device_id,
+                coordinator.api.host,
+                coordinator.config_entry.entry_id,
+                coordinator.config_entry.title,
+            )
+        ),
+        None,
+    )
+
+
 class HikvisionCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     """Polls slow-moving state, and keeps the push event stream alive."""
 

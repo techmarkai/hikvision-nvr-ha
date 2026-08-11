@@ -25,7 +25,11 @@ from homeassistant.helpers.event import async_call_later
 from homeassistant.util import dt as dt_util
 
 from .const import DOMAIN
-from .coordinator import HikvisionCoordinator
+from .coordinator import (
+    HikvisionCoordinator,
+    async_coordinators,
+    async_find_coordinator,
+)
 from .isapi import AuthError, HikvisionError
 
 _LOGGER = logging.getLogger(__name__)
@@ -52,29 +56,10 @@ def _camera_entity_id(hass: HomeAssistant, coordinator, channel_id: int) -> str 
     )
 
 
-def _coordinators(hass: HomeAssistant) -> dict[str, HikvisionCoordinator]:
-    """Every loaded NVR, keyed by its URL-safe slug."""
-    result = {}
-    for entry in hass.config_entries.async_entries(DOMAIN):
-        coordinator = getattr(entry, "runtime_data", None)
-        if isinstance(coordinator, HikvisionCoordinator):
-            result[coordinator.slug] = coordinator
-    return result
-
-
 def _get_coordinator(hass: HomeAssistant, device_id: str) -> HikvisionCoordinator:
-    coordinators = _coordinators(hass)
-    if device_id in coordinators:
-        return coordinators[device_id]
-    # Convenience: allow addressing by raw serial, host or title too.
-    for coordinator in coordinators.values():
-        if device_id in (
-            coordinator.device_id,
-            coordinator.api.host,
-            coordinator.config_entry.title,
-        ):
-            return coordinator
-    raise web.HTTPNotFound(reason=f"Unknown NVR '{device_id}'")
+    if (coordinator := async_find_coordinator(hass, device_id)) is None:
+        raise web.HTTPNotFound(reason=f"Unknown NVR '{device_id}'")
+    return coordinator
 
 
 def _get_channel(coordinator: HikvisionCoordinator, channel_id: str):
@@ -158,7 +143,7 @@ class DevicesView(_BaseView):
     async def get(self, request: web.Request) -> web.Response:
         hass = request.app["hass"]
         devices = []
-        for coordinator in _coordinators(hass).values():
+        for coordinator in async_coordinators(hass).values():
             info = coordinator.api.device_info
             devices.append(
                 {
@@ -377,7 +362,7 @@ class LiveView(_BaseView):
             stream_id = chan.streams[0]
 
         source = coordinator.api.rtsp_url(chan.id, stream_id)
-        stream = await _async_get_stream(
+        stream = await async_get_stream(
             hass, f"live-{coordinator.slug}-{chan.id}-{stream_id}", source
         )
         return self.json(
@@ -441,7 +426,7 @@ class PlaybackView(_BaseView):
                 f"pb-{coordinator.slug}-{chan.id}"
                 f"-{start.timestamp()}-{end.timestamp()}"
             )
-            stream = await _async_get_stream(hass, key, source)
+            stream = await async_get_stream(hass, key, source)
             payload["hls_url"] = stream.endpoint_url(HLS_PROVIDER)
 
         return self.json(payload)
@@ -808,7 +793,7 @@ def _create_stream_kwargs(label: str) -> dict[str, Any]:
     return kwargs
 
 
-async def _async_get_stream(hass: HomeAssistant, key: str, source: str) -> Stream:
+async def async_get_stream(hass: HomeAssistant, key: str, source: str) -> Stream:
     """Return a running HLS stream for ``source``, reusing an existing one.
 
     Re-requesting the same playback range while it is already playing must not
