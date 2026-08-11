@@ -581,14 +581,17 @@ async def _async_get_stream(hass: HomeAssistant, key: str, source: str) -> Strea
     if (existing := streams.get(key)) is not None:
         stream, cancel_idle = existing
         cancel_idle()
-        streams[key] = (stream, _schedule_idle_stop(hass, key))
-        return stream
+    else:
+        if len(streams) >= MAX_PLAYBACK_STREAMS:
+            oldest = next(iter(streams))
+            await _async_stop_stream(hass, oldest)
+        stream = create_stream(hass, source, **_create_stream_kwargs(key))
 
-    if len(streams) >= MAX_PLAYBACK_STREAMS:
-        oldest = next(iter(streams))
-        await _async_stop_stream(hass, oldest)
-
-    stream = create_stream(hass, source, **_create_stream_kwargs(key))
+    # Both paths, every time. Home Assistant reaps a provider that has had no
+    # client for a while (remove_provider), which leaves a cached Stream whose
+    # endpoint_url raises "not configured for format 'hls'". add_provider
+    # returns the existing provider when there is one, and start() no-ops while
+    # the worker thread is alive, so re-arming here is free and always correct.
     stream.add_provider(HLS_PROVIDER)
     await stream.start()
     streams[key] = (stream, _schedule_idle_stop(hass, key))

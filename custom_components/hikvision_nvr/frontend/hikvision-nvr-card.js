@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.4.1";
+const CARD_VERSION = "1.4.2";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -492,10 +492,14 @@ class HikvisionNvrCard extends HTMLElement {
         : this._playbackUrl;
 
     if (!url) {
+      // An error here used to sit behind "Starting stream…" forever, because
+      // only the stage re-renders -- show it where it happened.
       stage.innerHTML = `<div class="overlay">${
-        this._mode === "live"
-          ? "Starting stream…"
-          : "Pick a moment on the timeline to play"
+        this._error
+          ? esc(this._error)
+          : this._mode === "live"
+            ? "Starting stream…"
+            : "Pick a moment on the timeline to play"
       }</div>`;
       return;
     }
