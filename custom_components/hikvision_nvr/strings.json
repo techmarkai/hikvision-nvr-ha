@@ -254,5 +254,11 @@
         "name": "Started at"
       }
     }
+  },
+  "issues": {
+    "notifications_disabled": {
+      "title": "Detections are recorded but not reported",
+      "description": "{count} detection triggers on this NVR ({triggers}) are set to record only, with no Notify Surveillance Center linkage. The NVR will save motion clips but never tell Home Assistant, so those binary sensors stay off.\n\nRun the **Hikvision NVR: Enable event notifications** action to add the linkage. It keeps every existing action and only adds the notification."
+    }
   }
 }

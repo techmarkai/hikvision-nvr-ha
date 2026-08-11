@@ -13,7 +13,11 @@ from homeassistant.const import (
 )
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
-from homeassistant.helpers import device_registry as dr, entity_registry as er
+from homeassistant.helpers import (
+    device_registry as dr,
+    entity_registry as er,
+    issue_registry as ir,
+)
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .api import async_register_api
@@ -92,10 +96,41 @@ async def async_setup_entry(hass: HomeAssistant, entry: HikvisionConfigEntry) ->
     )
 
     _async_remove_obsolete_entities(hass, entry, coordinator)
+    await _async_check_notifications(hass, entry, api)
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     entry.async_on_unload(entry.add_update_listener(_async_reload_on_options))
     return True
+
+
+async def _async_check_notifications(
+    hass: HomeAssistant, entry: HikvisionConfigEntry, api: HikvisionISAPI
+) -> None:
+    """Warn when the NVR records detections but never announces them.
+
+    A trigger linked only to "record" fills the disk while Home Assistant hears
+    nothing, so motion sensors sit permanently off. It looks like a broken
+    integration and is really a device setting, so say so plainly and point at
+    the service that fixes it.
+    """
+    issue_id = f"notifications_disabled_{entry.entry_id}"
+    missing = await api.async_missing_notifications()
+    if not missing:
+        ir.async_delete_issue(hass, DOMAIN, issue_id)
+        return
+
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key="notifications_disabled",
+        translation_placeholders={
+            "count": str(len(missing)),
+            "triggers": ", ".join(missing[:6]) + ("..." if len(missing) > 6 else ""),
+        },
+    )
 
 
 @callback

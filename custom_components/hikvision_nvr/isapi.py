@@ -761,6 +761,49 @@ class HikvisionISAPI:
             "PUT", f"/ISAPI/PTZCtrl/channels/{channel}/presets/{preset}/goto"
         )
 
+    async def async_missing_notifications(self) -> list[str]:
+        """Detection triggers that record but never announce.
+
+        A Hikvision trigger linked only to "record" fills the disk while Home
+        Assistant hears nothing, which looks exactly like a broken integration.
+        Worth telling the user about rather than leaving them to wonder.
+        """
+        missing: list[str] = []
+        try:
+            root = await self.get_xml("/ISAPI/Event/triggers")
+        except (HikvisionError, DET.ParseError):
+            return missing
+        for node in root.findall("EventTrigger"):
+            event_type = EVENT_ALIASES.get(
+                _text(node, "eventType"), _text(node, "eventType")
+            )
+            if event_type not in ("VMD", "linedetection", "fielddetection"):
+                continue
+            methods = [
+                _text(n, "notificationMethod")
+                for n in node.findall(
+                    "EventTriggerNotificationList/EventTriggerNotification"
+                )
+            ]
+            if "center" in methods:
+                continue
+            trigger_id = _text(node, "id")
+            channel = trigger_id.rpartition("-")[2]
+            path = {
+                "VMD": f"/ISAPI/System/Video/inputs/channels/{channel}/motionDetection",
+                "linedetection": f"/ISAPI/Smart/LineDetection/{channel}",
+                "fielddetection": f"/ISAPI/Smart/FieldDetection/{channel}",
+            }[event_type]
+            # A trigger exists whether or not the detection behind it is
+            # switched on. Warning about a detection nobody enabled would be
+            # noise, so only report the ones that are actually running.
+            try:
+                if _text(await self.get_xml(path), "enabled") == "true":
+                    missing.append(trigger_id)
+            except (HikvisionError, DET.ParseError):
+                continue
+        return missing
+
     async def async_enable_notifications(
         self, event_types: set[str] | None = None, channels: set[int] | None = None
     ) -> list[str]:
