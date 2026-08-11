@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.3.1";
+const CARD_VERSION = "1.4.0";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,
@@ -502,12 +502,19 @@ class HikvisionNvrCard extends HTMLElement {
     if (stage.dataset.url === url) return;
     stage.dataset.url = url;
 
+    // ha-hls-player only absolutises the URL when driven by `entityid`; given a
+    // `url` it uses it verbatim and later does new URL(segment, url), which
+    // throws "Invalid base URL" on a relative path.
+    const absolute = this._hass.hassUrl
+      ? this._hass.hassUrl(url)
+      : new URL(url, window.location.origin).href;
+
     await ensurePlayer();
     stage.innerHTML = "";
     if (customElements.get("ha-hls-player")) {
       const player = document.createElement("ha-hls-player");
       player.hass = this._hass;
-      player.url = url;
+      player.url = absolute;
       player.autoPlay = true;
       player.controls = this._mode === "playback";
       player.muted = true;
@@ -516,7 +523,7 @@ class HikvisionNvrCard extends HTMLElement {
     } else {
       // Native HLS (Safari / iOS) when the HA player chunk is unavailable.
       const video = document.createElement("video");
-      video.src = url;
+      video.src = absolute;
       video.autoplay = true;
       video.muted = true;
       video.playsInline = true;
