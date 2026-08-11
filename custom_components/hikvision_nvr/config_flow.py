@@ -185,12 +185,19 @@ class HikvisionOptionsFlow(OptionsFlow):
             for events in coordinator.api.event_capabilities.values():
                 declared |= events
         declared &= EVENT_CLASSES.keys()
+        # Lower case throughout: a translation key has to be, and the entity
+        # translation keys already are, so this is the one form of an event
+        # type that every part of the integration agrees on.
         event_options = [
-            SelectOptionDict(value=event, label=event) for event in sorted(declared)
+            SelectOptionDict(value=event.lower(), label=event.lower())
+            for event in sorted(declared, key=str.lower)
         ]
-        default_events = current.get(
-            CONF_EVENTS, sorted(declared & DEFAULT_ENABLED_EVENTS)
-        )
+        default_events = [
+            event.lower()
+            for event in current.get(
+                CONF_EVENTS, sorted(declared & DEFAULT_ENABLED_EVENTS)
+            )
+        ]
 
         schema = vol.Schema(
             {

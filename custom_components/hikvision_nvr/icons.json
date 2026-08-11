@@ -18,7 +18,9 @@
   },
   "entity": {
     "binary_sensor": {
-      "disk_problem": "mdi:harddisk-remove",
+      "disk_problem": {
+        "default": "mdi:harddisk-remove"
+      },
       "facesnap": {
         "default": "mdi:account-box"
       },
@@ -48,12 +50,18 @@
       "cpu_usage": {
         "default": "mdi:cpu-64-bit"
       },
-      "disk_free": "mdi:database",
-      "disk_usage": "mdi:harddisk",
+      "disk_free": {
+        "default": "mdi:database"
+      },
+      "disk_usage": {
+        "default": "mdi:harddisk"
+      },
       "memory_used": {
         "default": "mdi:memory"
       },
-      "online_channels": "mdi:cctv",
+      "online_channels": {
+        "default": "mdi:cctv"
+      },
       "uptime": {
         "default": "mdi:clock-start"
       }

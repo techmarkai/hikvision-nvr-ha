@@ -184,7 +184,11 @@ def _async_remove_obsolete_entities(
         # whatever follows the channel number.
         parts = unique_id.rsplit("_", 1)
         event_type = parts[-1] if len(parts) == 2 else ""
-        if event_type and event_type in EVENT_CLASSES and event_type not in chosen:
+        if (
+            event_type
+            and event_type in EVENT_CLASSES
+            and event_type.lower() not in {event.lower() for event in chosen}
+        ):
             _LOGGER.debug(
                 "Removing %s: %s is switched off in the options",
                 entity.entity_id,

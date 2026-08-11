@@ -276,30 +276,30 @@
   "selector": {
     "event_type": {
       "options": {
-        "IO": "Alarm input",
-        "PIR": "PIR",
-        "VMD": "Motion",
-        "attendedBaggage": "Object left behind",
+        "attendedbaggage": "Object left behind",
         "badvideo": "Video quality problem",
         "diskerror": "Disk error",
         "diskfull": "Disk full",
-        "faceSnap": "Face captured",
         "facedetection": "Face detected",
+        "facesnap": "Face captured",
         "fielddetection": "Intrusion",
         "illaccess": "Illegal login",
+        "io": "Alarm input",
         "ipconflict": "IP conflict",
         "linedetection": "Line crossing",
         "nicbroken": "Network down",
-        "peopleDetection": "Person detected",
+        "peopledetection": "Person detected",
+        "pir": "PIR",
         "recordingfailure": "Recording failure",
-        "regionEntrance": "Region entrance",
-        "regionExiting": "Region exit",
+        "regionentrance": "Region entrance",
+        "regionexiting": "Region exit",
         "scenechangedetection": "Scene change",
         "shelteralarm": "Camera obstructed",
-        "softIO": "Software alarm input",
+        "softio": "Software alarm input",
         "tamperdetection": "Tampering",
-        "unattendedBaggage": "Object removed",
-        "videoloss": "Video loss"
+        "unattendedbaggage": "Object removed",
+        "videoloss": "Video loss",
+        "vmd": "Motion"
       }
     }
   }

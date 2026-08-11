@@ -56,9 +56,10 @@ def main() -> None:
     # The options screen offers event types by name, from the same file. An
     # unnamed option renders as its raw event type ("scenechangedetection").
     offered = set(strings.get("selector", {}).get("event_type", {}).get("options", {}))
-    missing = set(const.EVENT_CLASSES) - offered
+    events = {event.lower() for event in const.EVENT_CLASSES}
+    missing = events - offered
     assert not missing, f"selector options missing names: {sorted(missing)}"
-    stray = offered - set(const.EVENT_CLASSES)
+    stray = offered - events
     assert not stray, f"selector names unknown events: {sorted(stray)}"
     print(f"selector      : {len(offered)} event names, all known")
 

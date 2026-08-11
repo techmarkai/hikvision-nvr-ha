@@ -49,7 +49,13 @@ async def async_setup_entry(
     # Which event types the user wants at all. Unset means "the sensible
     # default set"; an explicit empty list means "none, thank you".
     chosen = entry.options.get(CONF_EVENTS)
-    wanted = set(chosen) if chosen is not None else set(EVENT_CLASSES)
+    # Compared case-insensitively: options saved before the selector moved to
+    # translation keys hold the device's own spelling ("VMD", "faceSnap").
+    wanted = (
+        {event.lower() for event in chosen}
+        if chosen is not None
+        else {event.lower() for event in EVENT_CLASSES}
+    )
 
     known: set[tuple[int, str]] = set()
     entities: list[BinarySensorEntity] = []
@@ -57,7 +63,9 @@ async def async_setup_entry(
     for channel in channels.values():
         entities.append(HikvisionChannelOnline(coordinator, channel))
         for event_type in sorted(
-            ((channel.events & EVENT_CLASSES.keys()) or FALLBACK_EVENTS) & wanted
+            event
+            for event in (channel.events & EVENT_CLASSES.keys()) or FALLBACK_EVENTS
+            if event.lower() in wanted
         ):
             known.add((channel.id, event_type))
             entities.append(
@@ -72,7 +80,10 @@ async def async_setup_entry(
 
     # Channel 0 is the NVR itself: disk, network, recording failures.
     for event_type in sorted(
-        coordinator.api.event_capabilities.get(0, set()) & EVENT_CLASSES.keys() & wanted
+        event
+        for event in coordinator.api.event_capabilities.get(0, set())
+        & EVENT_CLASSES.keys()
+        if event.lower() in wanted
     ):
         known.add((0, event_type))
         entities.append(
@@ -87,7 +98,11 @@ async def async_setup_entry(
     def _on_event(event: Event) -> None:
         """Create an entity the first time an event type shows up."""
         key = ((event.channel or 0), event.type)
-        if key in known or event.type not in EVENT_CLASSES or event.type not in wanted:
+        if (
+            key in known
+            or event.type not in EVENT_CLASSES
+            or event.type.lower() not in wanted
+        ):
             return
         channel = channels.get(event.channel or 0)
         if event.channel and channel is None:
