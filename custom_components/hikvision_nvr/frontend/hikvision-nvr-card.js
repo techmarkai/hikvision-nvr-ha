@@ -141,7 +141,7 @@ const STYLE = `
   .timeline {
     position: relative; height: 34px; margin: 0 12px 12px;
     background: var(--secondary-background-color); border-radius: 6px;
-    cursor: crosshair; overflow: hidden; touch-action: none;
+    cursor: grab; overflow: hidden; touch-action: none;
   }
   .timeline .block { position: absolute; top: 0; bottom: 0; background: var(--primary-color); opacity: .75; }
   .timeline .block.motion { background: var(--warning-color, #ff9800); }
@@ -153,6 +153,7 @@ const STYLE = `
   }
   .timeline .tick { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--divider-color); }
   .timeline { user-select: none; touch-action: none; }
+  .timeline.dragging { cursor: grabbing; }
   .empty { padding: 24px; text-align: center; color: var(--secondary-text-color); font-size: 13px; }
   .err { padding: 12px; color: var(--error-color); font-size: 13px; }
 `;
@@ -510,8 +511,11 @@ class HikvisionNvrCard extends HTMLElement {
     const timeline = this.shadowRoot.querySelector("#timeline");
     if (!timeline) return;
     timeline.innerHTML = this._timelineInner();
-    const reset = this.shadowRoot.querySelector("#zoomout");
-    if (reset) reset.disabled = this._view.to - this._view.from >= 0.999;
+    const whole = this._view.to - this._view.from >= 0.999;
+    for (const id of ["#zoomout", "#panleft", "#panright"]) {
+      const button = this.shadowRoot.querySelector(id);
+      if (button) button.disabled = whole;
+    }
   }
 
   _playbackControls() {
@@ -535,6 +539,8 @@ class HikvisionNvrCard extends HTMLElement {
               }>${o.label}</option>`
           ).join("")}
         </select>
+        <button class="icon-btn" id="panleft" ${zoomed ? "" : "disabled"} title="Move the view earlier">◀</button>
+        <button class="icon-btn" id="panright" ${zoomed ? "" : "disabled"} title="Move the view later">▶</button>
         <button class="icon-btn" id="zoomout" ${zoomed ? "" : "disabled"} title="Show the whole day">Whole day</button>
         <button class="icon-btn" id="download" ${this._downloadUrl ? "" : "disabled"}>Download</button>
       </div>
@@ -606,6 +612,7 @@ class HikvisionNvrCard extends HTMLElement {
       }
       drag = { x: event.clientX, view: { ...this._view } };
       this._panned = false;
+      timeline.classList.add("dragging");
     });
     timeline.addEventListener("pointermove", (event) => {
       if (!points.has(event.pointerId)) return;
@@ -634,6 +641,7 @@ class HikvisionNvrCard extends HTMLElement {
     });
     const release = (event) => {
       points.delete(event.pointerId);
+      if (points.size === 0) timeline.classList.remove("dragging");
       if (points.size < 2) this._pinch = null;
       if (points.size === 0) drag = null;
     };
@@ -643,6 +651,23 @@ class HikvisionNvrCard extends HTMLElement {
     card.querySelector("#zoomout").addEventListener("click", () => {
       this._view = { from: 0, to: 1 };
       this._paintTimeline();
+    });
+
+    // Step by half a screen, so there is always overlap with what you just saw.
+    const nudge = (direction) => {
+      const span = this._view.to - this._view.from;
+      clampView(this._view.from + direction * span * 0.5, span);
+    };
+    card.querySelector("#panleft").addEventListener("click", () => nudge(-1));
+    card.querySelector("#panright").addEventListener("click", () => nudge(1));
+
+    // Arrow keys once the timeline has focus.
+    timeline.tabIndex = 0;
+    timeline.addEventListener("keydown", (event) => {
+      if (event.key === "ArrowLeft") nudge(-1);
+      else if (event.key === "ArrowRight") nudge(1);
+      else return;
+      event.preventDefault();
     });
 
     const step = (direction) => {

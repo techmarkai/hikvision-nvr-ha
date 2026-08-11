@@ -63,9 +63,10 @@ In **History**, the **Clip** dropdown sets how much video a click on the timelin
 plays — and therefore how much **Download** saves, so the two never disagree.
 
 The timeline zooms: **scroll** on it (or **pinch** on a touchscreen) to zoom
-around the pointer, **drag** to pan, and **Whole day** to go back out. Tick
-labels get finer as you zoom in. All of it works on the day already loaded, so
-zooming never waits on the NVR.
+around the pointer. Once zoomed, move around with the **◀ ▶** buttons, by
+**dragging**, or with the arrow keys; **Whole day** goes back out. Tick labels
+get finer as you zoom in. All of it works on the day already loaded, so zooming
+never waits on the NVR.
 
 If the card does not appear right after an update, hard-refresh the browser
 (Ctrl-Shift-R) — the frontend caches by version.
