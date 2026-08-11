@@ -368,7 +368,9 @@ class HikvisionNvrCard extends HTMLElement {
       // mp4_url, not hls_url: these recordings carry a G.722.1 audio track that
       // crashes Home Assistant's HLS worker, and fragmented MP4 starts sooner.
       this._playbackUrl = data.mp4_url || data.hls_url;
-      this._downloadUrl = data.download_url;
+      // A separate endpoint: playback streams in real time, saving pulls the
+      // same footage from the NVR's bulk endpoint at full speed.
+      this._downloadUrl = data.download_url || data.mp4_url;
       this._error = null;
     } catch (err) {
       this._error = `Playback failed: ${errText(err)}`;

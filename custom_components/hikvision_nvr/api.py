@@ -419,7 +419,11 @@ class PlaybackView(_BaseView):
             # path-only URL, so auth/sign_path can sign it for a bare <video> or
             # a download link.
             "mp4_url": clip,
-            "download_url": clip,
+            # Saving uses the NVR bulk endpoint, which is ~50x faster
+            # than reading the real-time-paced playback RTSP.
+            "download_url": (
+                f"{base}/save/{start.timestamp():.0f}/{end.timestamp():.0f}.mp4"
+            ),
             "rtsp_url": coordinator.api.playback_rtsp_url(
                 chan.id, start, end, credentials=False
             ),
@@ -574,6 +578,106 @@ class ClipView(_BaseView):
             )
         elif disconnected:
             _LOGGER.debug("clip stopped early for channel %s (viewer left)", chan.id)
+        return response
+
+
+class SaveView(_BaseView):
+    """GET /api/hikvision_nvr/{device_id}/{channel}/save/{start}/{end}.mp4
+
+    A download, as fast as the network allows.
+
+    The clip endpoint reads the NVR's playback RTSP, which is paced at real
+    time: sixty seconds of video takes about 141 seconds to fetch, so a ten
+    minute clip outlives any browser's patience and the download appears to
+    fail part way. /ISAPI/ContentMgmt/download hands over the same footage at
+    roughly 1.1 MB/s -- some fifty times quicker -- but in Hikvision's own IMKH
+    container, so ffmpeg remuxes it to MP4 on the way past.
+
+    The NVR only accepts a playbackURI it issued itself, complete with its
+    name and size parameters, so the range is resolved to real segments with a
+    search first.
+    """
+
+    url = "/api/hikvision_nvr/{device_id}/{channel}/save/{start}/{end}.mp4"
+    name = "api:hikvision_nvr:save"
+
+    @_handle_errors
+    async def get(
+        self, request: web.Request, device_id: str, channel: str, start: str, end: str
+    ) -> web.StreamResponse:
+        hass = request.app["hass"]
+        coordinator = _get_coordinator(hass, device_id)
+        chan = _get_channel(coordinator, channel)
+        try:
+            start_dt = dt_util.utc_from_timestamp(float(start))
+            end_dt = dt_util.utc_from_timestamp(float(end))
+        except ValueError:
+            raise web.HTTPBadRequest(
+                reason="start and end must be epoch seconds"
+            ) from None
+        if not timedelta(0) < end_dt - start_dt <= timedelta(hours=2):
+            raise web.HTTPBadRequest(reason="clip must be 0-2 hours long")
+
+        recordings, _ = await coordinator.api.async_search_recordings(
+            chan.id, start_dt, end_dt, max_results=200
+        )
+        if not recordings:
+            raise web.HTTPNotFound(reason="nothing recorded in that range")
+
+        from homeassistant.components.ffmpeg import get_ffmpeg_manager
+
+        process = await asyncio.create_subprocess_exec(
+            get_ffmpeg_manager(hass).binary,
+            "-hide_banner", "-loglevel", "error",
+            "-i", "pipe:0",
+            "-an",
+            "-c:v", "copy",
+            "-f", "mp4",
+            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            "pipe:1",
+            stdin=asyncio.subprocess.PIPE,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+        filename = (
+            f"{chan.name.replace(' ', '_')}_"
+            f"{dt_util.as_local(start_dt):%Y%m%d_%H%M%S}.mp4"
+        )
+        response = web.StreamResponse(
+            headers={
+                "Content-Type": "video/mp4",
+                "Cache-Control": "no-store",
+                "Content-Disposition": f'attachment; filename="{filename}"',
+            }
+        )
+        await response.prepare(request)
+
+        async def feed() -> None:
+            """Pour every segment of the range into ffmpeg, back to back."""
+            try:
+                for recording in recordings:
+                    async for chunk in coordinator.api.async_download_stream(recording):
+                        process.stdin.write(chunk)
+                        await process.stdin.drain()
+            except (ConnectionResetError, BrokenPipeError, HikvisionError):
+                pass
+            finally:
+                if process.stdin and not process.stdin.is_closing():
+                    process.stdin.close()
+
+        pump = asyncio.ensure_future(feed())
+        try:
+            while chunk := await process.stdout.read(65536):
+                await response.write(chunk)
+            await response.write_eof()
+        except (ConnectionResetError, asyncio.CancelledError):
+            pass
+        finally:
+            pump.cancel()
+            if process.returncode is None:
+                process.kill()
+                await process.wait()
         return response
 
 
@@ -756,6 +860,7 @@ _VIEWS = (
     PlaybackView,
     DownloadView,
     ClipView,
+    SaveView,
     EventsView,
     PtzView,
 )
