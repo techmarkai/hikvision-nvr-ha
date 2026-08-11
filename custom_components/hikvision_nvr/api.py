@@ -572,7 +572,9 @@ class ClipView(_BaseView):
         # A viewer seeking away leaves ffmpeg writing into a closed pipe, so it
         # exits non-zero through no fault of its own. Only a failure while the
         # viewer was still watching is worth a warning.
-        if not disconnected and process.returncode not in (0, None, -9):
+        # 8 is ffmpeg's "could not write output" -- what a viewer closing the
+        # tab looks like from here, not something worth a warning.
+        if not disconnected and process.returncode not in (0, None, -9, 8):
             _LOGGER.warning(
                 "ffmpeg exited %s for channel %s clip", process.returncode, chan.id
             )

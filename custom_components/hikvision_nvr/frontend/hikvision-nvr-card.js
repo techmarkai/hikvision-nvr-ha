@@ -282,7 +282,10 @@ class HikvisionNvrCard extends HTMLElement {
       const { path } = await this._hass.callWS({
         type: "auth/sign_path",
         path: `/api/${API}/${this._device.id}/${channel}/snapshot`,
-        expires: 300,
+        // Generous: a backgrounded tab has its timers throttled, so a short
+        // expiry means it wakes and re-requests a dead URL. Home Assistant
+        // counts every rejection towards banning the browser's IP.
+        expires: 3600,
       });
       // No cache-buster: auth/sign_path signs an EMPTY query-parameter list,
       // so any extra query arg invalidates the signature and Home Assistant

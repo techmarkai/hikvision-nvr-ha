@@ -242,6 +242,31 @@ Device-supplied strings are HTML-escaped before rendering.
 
 ---
 
+## 3b. Audio
+
+Audited against the test rig, and there is very little to carry:
+
+| Channel | Audio | Codec |
+|---|---|---|
+| 8 (Camera 01) | enabled | G.711 u-law |
+| 1-7 | **not enabled** | -- |
+
+Two-way audio exists on channels 1 and 2, also G.711 u-law, and is not wired up
+(it needs the proprietary SDK on most models rather than ISAPI).
+
+What this means:
+
+* **Live**, audio is achievable on channel 8 at no cost: G.711 u-law is PCMU,
+  a native WebRTC codec, so go2rtc can carry it without transcoding. The card
+  currently mutes the player, and browsers block autoplay with sound anyway, so
+  it would need an unmute control rather than a default.
+* **Playback** audio would have to be transcoded. Recorded audio comes back as
+  G.722.1 (Siren), which has no valid MP4 mapping and is what crashes Home
+  Assistant's HLS worker -- see the section above. `-an` stays until someone
+  wants AAC transcoding for one channel.
+
+Nothing here is worth building until someone actually wants audio from Camera 01.
+
 ## 4. Security posture
 
 - The REST API is `requires_auth = True` — standard Home Assistant tokens only.
@@ -295,6 +320,23 @@ logger:
 | Timeline empty for a day | Nothing recorded, or the day predates the disk overwrite window | Cross-check with `search_recordings`. |
 | Playback stalls after ~6 h range | Deliberate server-side cap | Request a shorter range. |
 | Snapshots stop, live still works | Sub-stream disabled on that channel | Set the snapshot stream to main in Options. |
+
+### Stability findings
+
+Two problems were visible in a day of real use, both now fixed:
+
+* **Signed snapshot URLs expired under a backgrounded tab.** They were minted
+  with a 300 second life while the card refreshes every 10 seconds, which
+  sounds safe -- until the browser throttles a background tab's timers, wakes,
+  and re-requests a dead URL. Home Assistant counts every rejection towards
+  banning the browser's IP, and it had logged hundreds. Now an hour.
+* **`ffmpeg exited 8` warnings.** Exit 8 is "could not write output", which is
+  what a viewer closing the tab looks like from the server side. Logged as a
+  warning it reads like a fault; it is now treated as normal alongside -9.
+
+Not seen at all, having been watched for: coordinator update failures, event
+stream disconnects that did not recover, orphaned streams past the eight-stream
+cap, or entity churn.
 
 ### Capacity
 
