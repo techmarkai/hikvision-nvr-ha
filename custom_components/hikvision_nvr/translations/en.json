@@ -222,6 +222,17 @@
       "vmd": {
         "name": "Motion"
       }
+    },
+    "sensor": {
+      "cpu_usage": {
+        "name": "CPU usage"
+      },
+      "memory_used": {
+        "name": "Memory used"
+      },
+      "uptime": {
+        "name": "Started at"
+      }
     }
   }
 }

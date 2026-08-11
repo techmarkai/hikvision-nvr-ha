@@ -27,6 +27,10 @@ from .isapi import Channel, Event
 # motion still works on firmwares that declare nothing.
 FALLBACK_EVENTS = frozenset({"VMD"})
 
+# A disk the NVR is happy with reports one of these. Anything else -- "error",
+# "unformatted", "sleeping", a mismatch -- is worth telling the user about.
+HEALTHY_DISK_STATUS = frozenset({"ok", "idle"})
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
@@ -51,6 +55,10 @@ async def async_setup_entry(
         ):
             known.add((channel.id, event_type))
             entities.append(HikvisionBinarySensor(coordinator, channel, event_type))
+
+    # Disk health, straight from the NVR's own assessment.
+    for disk in coordinator.data.get("storage", []):
+        entities.append(HikvisionDiskProblem(coordinator, disk["id"], disk["name"]))
 
     # Channel 0 is the NVR itself: disk, network, recording failures.
     for event_type in sorted(
@@ -166,4 +174,49 @@ class HikvisionChannelOnline(HikvisionEntity, BinarySensorEntity):
             "channel": self.channel.id,
             "camera_ip": self.channel.ip_address,
             "streams": self.channel.streams,
+        }
+
+
+
+class HikvisionDiskProblem(HikvisionEntity, BinarySensorEntity):
+    """Whether a disk needs attention, per the NVR's own status field."""
+
+    _attr_device_class = BinarySensorDeviceClass.PROBLEM
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self, coordinator: HikvisionCoordinator, disk_id: int, disk_name: str
+    ) -> None:
+        super().__init__(coordinator)
+        self._disk_id = disk_id
+        self._attr_unique_id = f"{coordinator.device_id}_disk{disk_id}_problem"
+        self._attr_name = f"{disk_name or f'hdd{disk_id}'} health"
+
+    @property
+    def _disk(self) -> dict | None:
+        return next(
+            (
+                d
+                for d in self.coordinator.data.get("storage", [])
+                if d["id"] == self._disk_id
+            ),
+            None,
+        )
+
+    @property
+    def available(self) -> bool:
+        return super().available and self._disk is not None
+
+    @property
+    def is_on(self) -> bool:
+        disk = self._disk
+        return bool(disk) and disk.get("status") not in HEALTHY_DISK_STATUS
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        disk = self._disk or {}
+        return {
+            "status": disk.get("status"),
+            "property": disk.get("property"),
+            "used_percent": disk.get("used_percent"),
         }

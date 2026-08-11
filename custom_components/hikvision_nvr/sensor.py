@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timedelta
+
 from homeassistant.components.sensor import (
     SensorDeviceClass,
     SensorEntity,
@@ -10,9 +12,14 @@ from homeassistant.components.sensor import (
 from homeassistant.const import PERCENTAGE, EntityCategory, UnitOfInformation
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
+from homeassistant.util import dt as dt_util
 
 from .coordinator import HikvisionConfigEntry, HikvisionCoordinator
 from .entity import HikvisionEntity
+
+# Boot time is derived from an uptime counter and a local clock, so it wanders
+# by a second or two. Anything smaller than this is noise, not a reboot.
+UPTIME_DRIFT_TOLERANCE = 120
 
 
 async def async_setup_entry(
@@ -27,6 +34,16 @@ async def async_setup_entry(
         entities.append(HikvisionDiskUsage(coordinator, disk["id"], disk["name"]))
         entities.append(HikvisionDiskFree(coordinator, disk["id"], disk["name"]))
     entities.append(HikvisionOnlineChannels(coordinator))
+
+    # Only offered when the firmware actually reports them.
+    system = coordinator.data.get("system", {})
+    if "uptime_seconds" in system:
+        entities.append(HikvisionUptime(coordinator))
+    if "cpu_percent" in system:
+        entities.append(HikvisionCpuUsage(coordinator))
+    if "memory_used_mb" in system:
+        entities.append(HikvisionMemoryUsed(coordinator))
+
     async_add_entities(entities)
 
 
@@ -109,3 +126,82 @@ class HikvisionOnlineChannels(HikvisionEntity, SensorEntity):
                 cid for cid, online in self.coordinator.data["channels"].items() if not online
             ]
         }
+
+
+class _SystemSensor(HikvisionEntity, SensorEntity):
+    """A value from /ISAPI/System/status, reported against the NVR device."""
+
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    @property
+    def _system(self) -> dict:
+        return self.coordinator.data.get("system", {})
+
+    @property
+    def available(self) -> bool:
+        return super().available and bool(self._system)
+
+
+class HikvisionUptime(_SystemSensor):
+    """When the NVR last started.
+
+    Reported as the boot time rather than a rising counter: a timestamp is
+    stable, so it does not write a new state every poll, and Home Assistant
+    renders it as "3 days ago" on its own.
+    """
+
+    _attr_device_class = SensorDeviceClass.TIMESTAMP
+    _attr_translation_key = "uptime"
+
+    def __init__(self, coordinator: HikvisionCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.device_id}_uptime"
+        self._started_at: datetime | None = None
+
+    @property
+    def native_value(self) -> datetime | None:
+        seconds = self._system.get("uptime_seconds")
+        if seconds is None:
+            return self._started_at
+        started = dt_util.utcnow() - timedelta(seconds=seconds)
+        # Only move the reported boot time when it really moved. Recomputing it
+        # from a live clock otherwise jitters by a second on every poll and
+        # fills the recorder with meaningless state changes.
+        if self._started_at is None or abs(
+            (started - self._started_at).total_seconds()
+        ) > UPTIME_DRIFT_TOLERANCE:
+            self._started_at = started
+        return self._started_at
+
+
+class HikvisionCpuUsage(_SystemSensor):
+    _attr_native_unit_of_measurement = PERCENTAGE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "cpu_usage"
+
+    def __init__(self, coordinator: HikvisionCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.device_id}_cpu_usage"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._system.get("cpu_percent")
+
+
+class HikvisionMemoryUsed(_SystemSensor):
+    _attr_native_unit_of_measurement = UnitOfInformation.MEGABYTES
+    _attr_device_class = SensorDeviceClass.DATA_SIZE
+    _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "memory_used"
+
+    def __init__(self, coordinator: HikvisionCoordinator) -> None:
+        super().__init__(coordinator)
+        self._attr_unique_id = f"{coordinator.device_id}_memory_used"
+
+    @property
+    def native_value(self) -> float | None:
+        return self._system.get("memory_used_mb")
+
+    @property
+    def extra_state_attributes(self) -> dict:
+        return {"available_mb": self._system.get("memory_available_mb")}
