@@ -760,115 +760,134 @@ class HikvisionNvrCard extends HTMLElement {
 
   async _renderStage(stage) {
     if (!stage || !this._selected) return;
-    const url =
-      this._mode === "live"
-        ? await this._liveUrl().catch(() => null)
-        : this._playbackUrl;
+    if (this._mode === "live") return this._renderLive(stage);
+    return this._renderPlayback(stage);
+  }
 
-    if (!url) {
-      // An error here used to sit behind "Starting stream…" forever, because
-      // only the stage re-renders -- show it where it happened.
-      stage.innerHTML = `<div class="overlay">${
-        this._error
-          ? esc(this._error)
-          : this._mode === "live"
-            ? "Starting stream…"
-            : "Pick a moment on the timeline to play"
-      }</div>`;
-      return;
-    }
-    if (stage.dataset.url === url) return;
-    stage.dataset.url = url;
+  /** An error, or a note about what to do next, where the video would be. */
+  _overlay(stage, message) {
+    stage.dataset.url = "";
+    stage.innerHTML = `<div class="overlay">${esc(message)}</div>`;
+  }
 
-    // ha-hls-player only absolutises the URL when driven by `entityid`; given a
-    // `url` it uses it verbatim and later does new URL(segment, url), which
-    // throws "Invalid base URL" on a relative path.
-    const absolute = this._hass.hassUrl
+  _absolute(url) {
+    return this._hass.hassUrl
       ? this._hass.hassUrl(url)
       : new URL(url, window.location.origin).href;
+  }
 
-    stage.innerHTML = "";
+  /**
+   * Live view through Home Assistant's own camera element, which negotiates
+   * WebRTC via go2rtc: measured in this stage, a decoding frame in ~1.0s
+   * against ~2.9-5.1s for our HLS URL, and it reuses the stream the camera
+   * entity already runs rather than starting a second one.
+   *
+   * The HLS URL is fetched only if that path is missing or stays black.
+   * Asking for it up front -- which is what this did -- started an ffmpeg and
+   * an RTSP session against the NVR on every single live view, held them for
+   * the five minute idle timeout, and then threw the result away unread.
+   */
+  async _renderLive(stage) {
+    const key = `live:${this._selected}`;
+    if (stage.dataset.url === key) return;
 
-    // Playback is a plain fragmented-MP4 file: <video> plays it directly, with
-    // native seeking, and needs no HLS machinery at all.
-    if (this._mode === "playback") {
-      const { path } = await this._hass.callWS({
-        type: "auth/sign_path",
-        path: url,
-        expires: 3600,
-      });
-      const video = document.createElement("video");
-      video.src = this._hass.hassUrl ? this._hass.hassUrl(path) : path;
-      video.autoplay = true;
-      video.muted = true;
-      video.controls = true;
-      video.playsInline = true;
-      video.preload = "auto";
-      stage.appendChild(video);
-      // Chrome pauses muted video-only media in a background tab ("paused to
-      // save power"); that rejection is expected and not worth surfacing.
-      video.play().catch(() => {});
+    await ensurePlayer();
+    const channel = this._channels.find((c) => c.id === this._selected);
+    const stateObj = channel && this._hass.states[channel.entity_id];
+
+    if (stateObj && customElements.get("ha-camera-stream")) {
+      stage.dataset.url = key;
+      stage.innerHTML = "";
+
+      // ha-camera-stream reads its Home Assistant handles from Lit contexts,
+      // not from a hass property, and must be attached before stateObj is set.
+      const native = document.createElement("ha-camera-stream");
+      stage.appendChild(native);
+      native.stateObj = stateObj;
+      native.muted = this._muted;
+      native.allowExoPlayer = true;
+
+      // Never leave a black stage: if nothing is decoding shortly, fall back
+      // to the HLS path, which is slower but has always worked.
+      const started = Date.now();
+      const watchdog = setInterval(() => {
+        if (!native.isConnected || stage.dataset.url !== key) {
+          clearInterval(watchdog);
+        } else if (this._hasLiveVideo(native)) {
+          clearInterval(watchdog);
+        } else if (Date.now() - started > NATIVE_LIVE_TIMEOUT) {
+          clearInterval(watchdog);
+          native.remove();
+          this._renderHlsLive(stage);
+        }
+      }, 400);
       return;
     }
 
-    await ensurePlayer();
+    await this._renderHlsLive(stage);
+  }
 
-    // Live view: hand the camera entity to Home Assistant's own element, which
-    // negotiates WebRTC through go2rtc. Measured in this very stage, WebRTC
-    // reaches a decoding frame in ~1.0s against ~2.9-5.1s for our HLS URL, and
-    // it avoids starting a second stream (and second ffmpeg) beside the one the
-    // camera entity already runs.
-    //
-    // ha-camera-stream reads its Home Assistant handles from Lit contexts, not
-    // from a hass property, and must be attached before stateObj is assigned.
-    if (this._mode === "live" && customElements.get("ha-camera-stream")) {
-      const channel = this._channels.find((c) => c.id === this._selected);
-      const stateObj = channel && this._hass.states[channel.entity_id];
-      if (stateObj) {
-        const native = document.createElement("ha-camera-stream");
-        stage.appendChild(native);
-        native.stateObj = stateObj;
-        native.muted = this._muted;
-        native.allowExoPlayer = true;
+  /** The fallback: our own HLS URL, remuxed server-side by ffmpeg. */
+  async _renderHlsLive(stage) {
+    const url = await this._liveUrl().catch(() => null);
+    if (!url) return this._overlay(stage, this._error || "Starting stream\u2026");
+    stage.dataset.url = url;
+    stage.innerHTML = "";
 
-        // Never leave a black stage: if nothing is decoding shortly, fall back
-        // to the HLS path, which is slower but has always worked.
-        const started = Date.now();
-        const watchdog = setInterval(() => {
-          if (!native.isConnected || stage.dataset.url !== url) {
-            clearInterval(watchdog);
-          } else if (this._hasLiveVideo(native)) {
-            clearInterval(watchdog);
-          } else if (Date.now() - started > NATIVE_LIVE_TIMEOUT) {
-            clearInterval(watchdog);
-            native.remove();
-            stage.dataset.url = "";
-            this._renderStage(stage);
-          }
-        }, 400);
-        return;
-      }
-    }
-
+    const absolute = this._absolute(url);
     if (customElements.get("ha-hls-player")) {
       const player = document.createElement("ha-hls-player");
       player.hass = this._hass;
       player.url = absolute;
       player.autoPlay = true;
-      player.controls = this._mode === "playback";
       player.muted = true;
       player.playsInline = true;
       stage.appendChild(player);
-    } else {
-      // Native HLS (Safari / iOS) when the HA player chunk is unavailable.
-      const video = document.createElement("video");
-      video.src = absolute;
-      video.autoplay = true;
-      video.muted = true;
-      video.playsInline = true;
-      video.controls = true;
-      stage.appendChild(video);
+      return;
     }
+    // Native HLS (Safari / iOS) when the Home Assistant chunk is unavailable.
+    const video = document.createElement("video");
+    video.src = absolute;
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.controls = true;
+    stage.appendChild(video);
+  }
+
+  /**
+   * History is a plain fragmented-MP4 file, so <video> plays it directly with
+   * native seeking and no HLS machinery at all. It is signed rather than sent
+   * with a header because a bare <video src> cannot carry one.
+   */
+  async _renderPlayback(stage) {
+    const url = this._playbackUrl;
+    if (!url) {
+      return this._overlay(
+        stage,
+        this._error || "Pick a moment on the timeline to play"
+      );
+    }
+    if (stage.dataset.url === url) return;
+    stage.dataset.url = url;
+
+    const { path } = await this._hass.callWS({
+      type: "auth/sign_path",
+      path: url,
+      expires: 3600,
+    });
+    stage.innerHTML = "";
+    const video = document.createElement("video");
+    video.src = this._absolute(path);
+    video.autoplay = true;
+    video.muted = true;
+    video.controls = true;
+    video.playsInline = true;
+    video.preload = "auto";
+    stage.appendChild(video);
+    // Chrome pauses muted video-only media in a background tab ("paused to
+    // save power"); that rejection is expected and not worth surfacing.
+    video.play().catch(() => {});
   }
 }
 
