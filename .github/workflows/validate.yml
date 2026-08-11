@@ -41,5 +41,6 @@ jobs:
       # registration, translations, icons -- and need no Home Assistant install.
       - run: python tests/test_services.py
       - run: python tests/test_translations.py
+      - run: python tests/test_notifications.py
       - run: node --check custom_components/hikvision_nvr/frontend/hikvision-nvr-card.js
       - run: node --check custom_components/hikvision_nvr/frontend/hikvision-nvr-panel.js

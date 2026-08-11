@@ -44,6 +44,7 @@ ATTR_DEVICE_ID = "device_id"
 ATTR_FILENAME = "filename"
 ATTR_EVENT_TYPE = "event_type"
 ATTR_LIMIT = "limit"
+ATTR_DRY_RUN = "dry_run"
 
 _BASE = {
     vol.Optional(ATTR_DEVICE_ID): cv.string,
@@ -93,6 +94,7 @@ NOTIFICATIONS_SCHEMA = vol.Schema(
         vol.Optional(ATTR_CHANNEL): vol.All(
             cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=1, max=64))]
         ),
+        vol.Optional(ATTR_DRY_RUN, default=False): cv.boolean,
     }
 )
 
@@ -255,6 +257,7 @@ def async_setup_services(hass: HomeAssistant) -> None:
 
     async def enable_notifications(call: ServiceCall) -> ServiceResponse:
         coordinator = _resolve(hass, call.data.get(ATTR_DEVICE_ID))
+        dry_run = call.data[ATTR_DRY_RUN]
         try:
             changed = await coordinator.api.async_enable_notifications(
                 event_types=set(call.data[ATTR_EVENT_TYPE])
@@ -263,13 +266,15 @@ def async_setup_services(hass: HomeAssistant) -> None:
                 channels=set(call.data[ATTR_CHANNEL])
                 if call.data.get(ATTR_CHANNEL)
                 else None,
+                dry_run=dry_run,
             )
         except HikvisionError as err:
             raise HomeAssistantError(f"Could not enable notifications: {err}") from err
-        # Capabilities are unchanged, but a trigger that can now report may
-        # deserve an entity, so refresh what we know.
-        await coordinator.api.async_update_capabilities()
-        return {"changed": changed, "count": len(changed)}
+        if not dry_run:
+            # Capabilities are unchanged, but a trigger that can now report may
+            # deserve an entity, so refresh what we know.
+            await coordinator.api.async_update_capabilities()
+        return {"changed": changed, "count": len(changed), "dry_run": dry_run}
 
     async def reboot(call: ServiceCall) -> None:
         coordinator = _resolve(hass, call.data.get(ATTR_DEVICE_ID))

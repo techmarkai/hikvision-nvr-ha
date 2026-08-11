@@ -68,6 +68,10 @@ DEFAULT_ENABLED_EVENTS = frozenset(
     {"VMD", "linedetection", "fielddetection", "tamperdetection", "videoloss"}
 )
 
+# Alarms that say something about storage, and so are worth re-reading the
+# disk state for the moment they arrive.
+STORAGE_EVENTS = frozenset({"diskfull", "diskerror", "recordingfailure"})
+
 SIGNAL_EVENT = f"{DOMAIN}_event"
 
 ATTR_CHANNEL = "channel"

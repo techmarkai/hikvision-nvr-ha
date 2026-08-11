@@ -43,6 +43,8 @@ async def async_get_config_entry_diagnostics(
                     "state": event.state,
                     "channel": event.channel,
                     "timestamp": event.timestamp.isoformat(),
+                    "disk": event.disk,
+                    "post_count": event.post_count,
                 }
                 for event in list(coordinator.recent_events)[-25:]
             ],

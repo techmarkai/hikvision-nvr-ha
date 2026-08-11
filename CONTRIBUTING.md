@@ -16,6 +16,7 @@ ruff check custom_components tests
 python -m compileall -q custom_components tests
 python tests/test_services.py
 python tests/test_translations.py
+python tests/test_notifications.py
 node --check custom_components/hikvision_nvr/frontend/hikvision-nvr-card.js
 ```
 

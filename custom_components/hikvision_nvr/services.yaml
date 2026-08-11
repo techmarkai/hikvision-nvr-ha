@@ -133,3 +133,7 @@ enable_notifications:
       selector:
         text:
           multiple: true
+    dry_run:
+      default: false
+      selector:
+        boolean:

@@ -17,7 +17,7 @@ from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 from homeassistant.util import dt as dt_util
 
-from .const import DOMAIN, EVENT_AUTO_OFF, SCAN_INTERVAL, SIGNAL_EVENT
+from .const import DOMAIN, EVENT_AUTO_OFF, SCAN_INTERVAL, SIGNAL_EVENT, STORAGE_EVENTS
 from .isapi import (
     DEVICE_EVENTS,
     AuthError,
@@ -170,6 +170,24 @@ class HikvisionCoordinator(DataUpdateCoordinator[dict[str, Any]]):
     @callback
     def _handle_event(self, event: Event) -> None:
         self.recent_events.append(event)
+
+        # A storage alarm says something the hourly-looking poll cannot: the
+        # device found a problem *now*. On the reference NVR a disk drops to
+        # "reparing", loses its free space and recovers inside twenty seconds,
+        # so a sixty second poll reports "ok" throughout and the disk sensors
+        # never move. Asking the coordinator to look again costs one request
+        # and reports what the device actually says, rather than inventing a
+        # state from the alert.
+        if event.type in STORAGE_EVENTS and event.active:
+            _LOGGER.debug(
+                "Storage alarm %s (disk %s, post %s); refreshing storage state",
+                event.type,
+                event.disk,
+                event.post_count,
+            )
+            self.config_entry.async_create_task(
+                self.hass, self.async_request_refresh(), eager_start=False
+            )
         for channel in self._channels_for(event):
             key = (channel, event.type)
             if event.active:

@@ -633,6 +633,8 @@ class EventsView(_BaseView):
                 "channel": event.channel,
                 "description": event.description,
                 "timestamp": event.timestamp.isoformat(),
+                "disk": event.disk,
+                "post_count": event.post_count,
             }
             for event in coordinator.recent_events
             if cutoff is None or event.timestamp > dt_util.as_utc(cutoff)

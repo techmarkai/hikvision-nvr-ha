@@ -39,14 +39,50 @@ EVENT_ALIASES: dict[str, str] = {
     "shelteralarm": "tamperdetection",
 }
 
-# "Notify Surveillance Center" -- the linkage that pushes an event to the alert
-# stream. The id is literally "center"; a per-channel id is rejected.
-_CENTER = (
-    "<EventTriggerNotification><id>center</id>"
-    "<notificationMethod>center</notificationMethod>"
-    "</EventTriggerNotification>"
+# The notification list's closing tag, with whatever namespace prefix the
+# firmware chose. Everything before it is the device's own document and is
+# never rewritten.
+_LIST_CLOSE_RE = re.compile(r"</((?:[\w.-]+:)?)EventTriggerNotificationList\s*>")
+# "Notify Surveillance Center" is the linkage that pushes an event to the alert
+# stream. Its id is literally "center": a per-channel id like "center-3" is
+# rejected with HTTP 400.
+_CENTER_METHOD_RE = re.compile(
+    r"<(?:[\w.-]+:)?notificationMethod\s*>\s*center\s*</(?:[\w.-]+:)?notificationMethod\s*>"
 )
-_LIST_CLOSE = "</EventTriggerNotificationList>"
+
+
+def has_center_notification(document: str) -> bool:
+    """Does this notification document already announce to the alert stream?"""
+    return bool(_CENTER_METHOD_RE.search(document))
+
+
+def with_center_notification(document: str) -> str | None:
+    """The device's own document with one notification block inserted.
+
+    Nothing else is touched: not the fields this integration has never heard of
+    (``dynVideoInputID``, ``notificationRecurrence``), not the namespace, not
+    the ordering, not the whitespace. Rebuilding the list instead of editing it
+    is what broke this before -- the rebuild dropped ``dynVideoInputID`` and
+    renumbered the new entry, and the firmware answered HTTP 400.
+
+    Returns None if the document is not a notification list, so the caller can
+    leave the device alone rather than guess.
+    """
+    if has_center_notification(document):
+        return None
+    matches = list(_LIST_CLOSE_RE.finditer(document))
+    if not matches:
+        return None
+    closing = matches[-1]
+    prefix = closing.group(1)
+    block = (
+        f"<{prefix}EventTriggerNotification>"
+        f"<{prefix}id>center</{prefix}id>"
+        f"<{prefix}notificationMethod>center</{prefix}notificationMethod>"
+        f"</{prefix}EventTriggerNotification>"
+    )
+    return document[: closing.start()] + block + document[closing.start() :]
+
 
 # Events that belong to the NVR itself rather than a camera. The alert stream
 # leaves channelID empty for these, and we file them against channel 0.
@@ -131,6 +167,14 @@ class Event:
     channel: int | None
     description: str
     timestamp: datetime
+    # Which disk a storage alarm is about. The alert says so and it is the only
+    # place it does: /ISAPI/ContentMgmt/Storage reports whatever the disk looks
+    # like when polled, which for an intermittent fault is usually "ok".
+    disk: int | None = None
+    # How many times the device has re-posted this same active alarm. A disk
+    # fault arrives eight times in four seconds with the count climbing; the
+    # events are repeats of one condition, not eight faults.
+    post_count: int | None = None
 
     @property
     def active(self) -> bool:
@@ -792,12 +836,16 @@ class HikvisionISAPI:
             timestamp = _parse_time(_text(root, "dateTime"))
         except ValueError:
             timestamp = datetime.now(UTC)
+        disk = _text(root, "diskNo")
+        count = _text(root, "activePostCount")
         return Event(
             type=_text(root, "eventType", "unknown"),
             state=_text(root, "eventState", "active"),
             channel=int(channel_raw) if channel_raw.isdigit() else None,
             description=_text(root, "eventDescription"),
             timestamp=timestamp,
+            disk=int(disk) if disk.isdigit() else None,
+            post_count=int(count) if count.isdigit() else None,
         )
 
     # ------------------------------------------------------------------ PTZ
@@ -863,8 +911,37 @@ class HikvisionISAPI:
                 continue
         return missing
 
+    def _matches(
+        self,
+        node: ET.Element,
+        event_types: set[str] | None,
+        channels: set[int] | None,
+    ) -> bool:
+        """Is this trigger in scope?
+
+        Both filters are matched against the trigger's declared type and its
+        channel, case-insensitively and under the same aliasing the rest of the
+        integration uses -- so asking for "linedetection" can only ever reach a
+        line crossing trigger, whatever the caller capitalised and whatever the
+        firmware calls it internally.
+        """
+        if event_types is not None:
+            declared = _text(node, "eventType")
+            event_type = EVENT_ALIASES.get(declared, declared)
+            wanted = {event.lower() for event in event_types}
+            if not ({event_type.lower(), declared.lower()} & wanted):
+                return False
+        if channels is not None:
+            suffix = re.search(r"-(\d+)$", _text(node, "id"))
+            if (int(suffix.group(1)) if suffix else 0) not in channels:
+                return False
+        return True
+
     async def async_enable_notifications(
-        self, event_types: set[str] | None = None, channels: set[int] | None = None
+        self,
+        event_types: set[str] | None = None,
+        channels: set[int] | None = None,
+        dry_run: bool = False,
     ) -> list[str]:
         """Make the device announce its events, not just record them.
 
@@ -874,21 +951,17 @@ class HikvisionISAPI:
         will fill the disk with motion clips while Home Assistant never sees a
         thing -- which is the default on many installs.
 
-        Existing notifications are preserved; this only ever adds "center".
-        Returns the triggers that were changed.
+        Only ever adds, never removes, and only to triggers matching the
+        filters. Running it twice changes nothing the second time. With
+        ``dry_run`` it reports what it would change and writes nothing.
+
+        Returns the trigger ids changed (or that would be changed).
         """
         changed: list[str] = []
         root = await self.get_xml("/ISAPI/Event/triggers")
         for node in root.findall("EventTrigger"):
             trigger_id = _text(node, "id")
-            event_type = EVENT_ALIASES.get(
-                _text(node, "eventType"), _text(node, "eventType")
-            )
-            if event_types and event_type not in event_types:
-                continue
-            suffix = re.search(r"-(\d+)$", trigger_id)
-            channel = int(suffix.group(1)) if suffix else 0
-            if channels and channel not in channels:
+            if not self._matches(node, event_types, channels):
                 continue
 
             methods = [
@@ -900,11 +973,6 @@ class HikvisionISAPI:
             if "center" in methods:
                 continue
 
-            # Send back the device's own document with one block added, rather
-            # than rebuilding it. Rebuilding dropped the <dynVideoInputID> the
-            # firmware puts on a record notification and numbered the new entry
-            # "center-3" where it wants plain "center": both are HTTP 400, and
-            # motion happened to survive it while line crossing did not.
             path = f"/ISAPI/Event/triggers/{trigger_id}/notifications"
             try:
                 document = (await (await self.request("GET", path)).text()).strip()
@@ -914,19 +982,26 @@ class HikvisionISAPI:
                 # and nothing the user can do, so this is not a warning.
                 _LOGGER.debug("%s has no notification list: %s", trigger_id, err)
                 continue
-            if _LIST_CLOSE not in document:
-                _LOGGER.debug("Unexpected notification document for %s", trigger_id)
+
+            # The list endpoint can lag the trigger's own document, so the
+            # decision is made on what the device just handed us.
+            updated = with_center_notification(document)
+            if updated is None:
+                _LOGGER.debug("%s needs no change", trigger_id)
+                continue
+            if dry_run:
+                changed.append(trigger_id)
                 continue
             try:
-                await self.request(
-                    "PUT", path, data=document.replace(_LIST_CLOSE, _CENTER + _LIST_CLOSE)
-                )
+                await self.request("PUT", path, data=updated)
             except HikvisionError as err:
-                _LOGGER.warning("Could not enable notifications on %s: %s", trigger_id, err)
+                _LOGGER.warning(
+                    "Could not enable notifications on %s: %s", trigger_id, err
+                )
                 continue
             changed.append(trigger_id)
 
-        if changed:
+        if changed and not dry_run:
             _LOGGER.info("Enabled event notifications on: %s", ", ".join(changed))
         return changed
 
