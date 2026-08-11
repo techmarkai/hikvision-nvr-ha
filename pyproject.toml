@@ -8,3 +8,7 @@ select = ["E", "F", "W", "I", "UP", "B", "SIM"]
 [tool.ruff.lint.per-file-ignores]
 # The live check talks to real hardware and prints as it goes.
 "tests/live_check.py" = ["T201"]
+
+[tool.ruff.lint.isort]
+# Home Assistant's own convention: `from x import a as b, c as d` on one line.
+combine-as-imports = true

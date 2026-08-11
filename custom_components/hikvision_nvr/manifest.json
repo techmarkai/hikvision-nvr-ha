@@ -1,26 +1,26 @@
 {
   "domain": "hikvision_nvr",
   "name": "Hikvision NVR",
-  "version": "1.20.0",
-  "documentation": "https://github.com/techmarkai/hikvision-nvr-ha",
-  "issue_tracker": "https://github.com/techmarkai/hikvision-nvr-ha/issues",
+  "after_dependencies": [
+    "media_source",
+    "lovelace"
+  ],
   "codeowners": [
     "@techmarkai"
   ],
   "config_flow": true,
-  "iot_class": "local_push",
-  "integration_type": "hub",
   "dependencies": [
     "http",
     "frontend",
     "stream",
     "ffmpeg"
   ],
-  "after_dependencies": [
-    "media_source",
-    "lovelace"
-  ],
+  "documentation": "https://github.com/techmarkai/hikvision-nvr-ha",
+  "integration_type": "hub",
+  "iot_class": "local_push",
+  "issue_tracker": "https://github.com/techmarkai/hikvision-nvr-ha/issues",
   "requirements": [
     "defusedxml>=0.7.1"
-  ]
+  ],
+  "version": "1.20.0"
 }

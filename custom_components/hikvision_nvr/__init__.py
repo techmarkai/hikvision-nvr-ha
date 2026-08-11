@@ -14,12 +14,9 @@ from homeassistant.const import (
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import ConfigEntryAuthFailed, ConfigEntryNotReady
 from homeassistant.helpers import (
+    config_validation as cv,
     device_registry as dr,
-)
-from homeassistant.helpers import (
     entity_registry as er,
-)
-from homeassistant.helpers import (
     issue_registry as ir,
 )
 from homeassistant.helpers.aiohttp_client import async_get_clientsession
@@ -48,6 +45,9 @@ from .services import async_setup_services
 _LOGGER = logging.getLogger(__name__)
 
 PLATFORMS = [Platform.BINARY_SENSOR, Platform.CAMERA, Platform.SENSOR]
+
+# Everything is set up from the UI; there is nothing to put in YAML.
+CONFIG_SCHEMA = cv.config_entry_only_config_schema(DOMAIN)
 
 
 async def async_setup(hass: HomeAssistant, config: dict) -> bool:
