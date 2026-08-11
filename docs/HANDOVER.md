@@ -108,6 +108,39 @@ fast.
 range, cancels the idle timer on re-request, and caps concurrency at 8. Streams
 stop 5 minutes after their last use.
 
+### Streaming latency: measured, and the WebRTC opportunity
+
+Measured on the test rig, in-browser, time from mount to first decoded frame
+(`requestVideoFrameCallback`):
+
+| Path | First frame |
+|---|---|
+| Our `/live` -> HA `stream` -> HLS (current) | 2.9s, 4.6s, 5.1s (median **4.6s**) |
+| WebRTC SDP answer from go2rtc (protocol level) | **0.29s** (session at 0.20s) |
+
+go2rtc is present and the cameras advertise `frontend_stream_types: ["hls",
+"web_rtc"]`, so WebRTC should cut live startup by roughly an order of magnitude
+and remove a second ffmpeg per camera -- our `/live` builds its own stream
+alongside the one the camera entity already runs.
+
+**It is not wired up, deliberately.** Driving `ha-camera-stream` from inside
+this card produced only a 2x2 placeholder video and no frames on any of three
+channels over 18s, while the same element built by hand in the console did
+deliver video (`ha-web-rtc-player`, 352x288). The difference has not been
+found. Shipping it black would trade 4.6s of latency for no picture at all, so
+the change was reverted after measurement -- which is the point of measuring.
+
+Worth knowing for whoever picks this up:
+
+* Attach `ha-camera-stream` **before** assigning `hass`/`stateObj`; it is a Lit
+  element and properties set while detached are dropped.
+* Half these channels are H.265 (1, 2, 3, 7) and half H.264 (4, 5, 6, 8).
+  Browsers do not decode H.265 over WebRTC, so those channels can only be
+  served by transcoding -- which costs more than it saves -- or by HLS.
+* `camera/capabilities` over the websocket reports what a camera really offers.
+* The camera entity id now comes from the entity registry, so a card can hand
+  the entity to Home Assistant's own player once this works.
+
 ### Why playback does not use the stream component
 These NVRs record a **G.722.1** audio track. PyAV cannot name that codec, so
 Home Assistant's `stream/worker.py` dies with `'AudioStream' object has no
