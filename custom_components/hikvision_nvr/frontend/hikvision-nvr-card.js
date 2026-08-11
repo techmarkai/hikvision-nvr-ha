@@ -117,7 +117,13 @@ const STYLE = `
   .dot { width: 7px; height: 7px; border-radius: 50%; background: #2ecc71; flex: none; }
   .tile.offline .dot { background: var(--error-color, #e74c3c); }
   .tile.active { outline: 2px solid var(--primary-color); outline-offset: -2px; }
-  .stage { position: relative; background: #000; aspect-ratio: 16 / 9; }
+  .stage {
+    position: relative; background: #000; aspect-ratio: 16 / 9;
+    /* A player or overlay must never bleed past the stage onto the
+       controls below, and the stage must not be shrunk by the flex
+       column into overlapping them. */
+    overflow: hidden; flex: none;
+  }
   .stage > * { width: 100%; height: 100%; display: block; }
   .stage video { object-fit: contain; background: #000; }
   .overlay {
@@ -125,7 +131,13 @@ const STYLE = `
     color: #fff; font-size: 13px; background: rgba(0,0,0,.5); text-align: center;
     padding: 12px;
   }
-  .controls { display: flex; align-items: center; gap: 8px; padding: 8px 12px; flex-wrap: wrap; }
+  .controls {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 12px; flex-wrap: wrap;
+    position: relative; z-index: 1;
+    background: var(--card-background-color, #fff);
+    color: var(--primary-text-color);
+  }
   .controls input[type="date"], .controls select {
     background: var(--card-background-color); color: var(--primary-text-color);
     border: 1px solid var(--divider-color); border-radius: 6px; padding: 4px 8px;
