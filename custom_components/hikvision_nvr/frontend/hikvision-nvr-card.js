@@ -197,6 +197,9 @@ class HikvisionNvrCard extends HTMLElement {
     this._blocks = [];
     this._snapshotUrls = new Map();
     this._clipSeconds = DEFAULT_CLIP_SECONDS;
+    // Live starts muted because browsers will not autoplay with sound;
+    // the speaker button is what turns it on.
+    this._muted = true;
     // Visible slice of the day, as fractions 0..1. Zoom narrows it, pan
     // slides it. The blocks always cover the whole day, so zooming never
     // needs another round trip to the NVR.
@@ -440,6 +443,13 @@ class HikvisionNvrCard extends HTMLElement {
     card.innerHTML = `
       <div class="head">
         <div class="title">${esc(channel ? channel.name : this._device.name)}</div>
+        ${
+          this._mode === "live" && channel && channel.has_audio
+            ? `<button class="icon-btn" id="mute" title="${
+                this._muted ? "Unmute" : "Mute"
+              }">${this._muted ? "\u{1F507}" : "\u{1F50A}"}</button>`
+            : ""
+        }
         <div class="modes">
           <button data-mode="live" aria-pressed="${this._mode === "live"}">Live</button>
           <button data-mode="playback" aria-pressed="${this._mode === "playback"}">History</button>
@@ -471,6 +481,27 @@ class HikvisionNvrCard extends HTMLElement {
         if (this._mode === "playback") this._loadTimeline();
       })
     );
+    const muteButton = card.querySelector("#mute");
+    if (muteButton) {
+      muteButton.addEventListener("click", () => {
+        this._muted = !this._muted;
+        const stage = this.shadowRoot.querySelector("#stage");
+        const native = stage && stage.querySelector("ha-camera-stream");
+        if (native) native.muted = this._muted;
+        // The element already exists, so set it on the video underneath too
+        // rather than waiting for a re-render to push the property down.
+        const stack = stage ? [stage] : [];
+        while (stack.length) {
+          const node = stack.pop();
+          if (node.tagName === "VIDEO") node.muted = this._muted;
+          if (node.shadowRoot) stack.push(...node.shadowRoot.children);
+          if (node.children) stack.push(...node.children);
+        }
+        muteButton.textContent = this._muted ? "\u{1F507}" : "\u{1F50A}";
+        muteButton.title = this._muted ? "Unmute" : "Mute";
+      });
+    }
+
     card.querySelectorAll(".tile").forEach((tile) =>
       tile.addEventListener("click", () => {
         this._selected = Number(tile.dataset.channel);
@@ -797,7 +828,7 @@ class HikvisionNvrCard extends HTMLElement {
         const native = document.createElement("ha-camera-stream");
         stage.appendChild(native);
         native.stateObj = stateObj;
-        native.muted = true;
+        native.muted = this._muted;
         native.allowExoPlayer = true;
 
         // Never leave a black stage: if nothing is decoding shortly, fall back

@@ -178,6 +178,8 @@ class DevicesView(_BaseView):
                             "online": c.online,
                             "ptz": c.ptz,
                             "streams": c.streams,
+                            "has_audio": c.has_audio,
+                            "audio_codec": c.audio_codec,
                             "ip_address": c.ip_address,
                             "entity_id": _camera_entity_id(hass, coordinator, c.id),
                         }
@@ -206,6 +208,7 @@ class ChannelsView(_BaseView):
                         "online": c.online,
                         "ptz": c.ptz,
                         "streams": c.streams,
+                        "has_audio": c.has_audio,
                         "snapshot_url": (
                             f"/api/hikvision_nvr/{coordinator.slug}/{c.id}/snapshot"
                         ),

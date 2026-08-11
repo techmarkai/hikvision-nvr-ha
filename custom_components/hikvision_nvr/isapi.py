@@ -80,6 +80,9 @@ class Channel:
     ptz: bool = False
     # Event types this channel declares support for, as reported by the device.
     events: set[str] = field(default_factory=set)
+    # Most channels have no microphone; only offer audio where there is some.
+    has_audio: bool = False
+    audio_codec: str | None = None
 
     @property
     def track_id(self) -> int:
@@ -403,6 +406,11 @@ class HikvisionISAPI:
                 channels.setdefault(
                     cid, Channel(id=cid, name=_text(node, "channelName") or f"Camera {cid}")
                 )
+                if _text(node, "Audio/enabled") == "true":
+                    channels[cid].has_audio = True
+                    channels[cid].audio_codec = (
+                        _text(node, "Audio/audioCompressionType") or None
+                    )
             for cid, available in streams.items():
                 channels[cid].streams = sorted(available)
         except (HikvisionError, DET.ParseError) as err:
