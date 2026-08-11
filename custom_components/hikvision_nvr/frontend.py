@@ -30,14 +30,11 @@ DATA_URLS = f"{DOMAIN}_frontend_urls"
 async def _async_asset_urls(hass: HomeAssistant) -> tuple[str, str]:
     """Card and panel URLs, cache-busted by the integration's own version.
 
-    This was a hand-maintained constant, and it drifted: it sat at 1.8.0 while
-    the integration shipped 1.9.0, 1.10.0 and 1.10.1, so the URL never changed
-    across three releases. A browser that cached a *failed* module fetch for
-    that URL -- which happens if an upgrade is briefly broken -- kept failing,
-    because a failed module is cached hard and nothing ever changed the key.
-
-    Deriving it from the manifest means every release is a new URL, so a poisoned
-    entry cannot outlive an update, and there is nothing left to forget to bump.
+    Derived from the manifest rather than kept as its own constant, which drifts:
+    a browser caches a failed module fetch hard, so if an upgrade is briefly
+    broken and the URL never changes, the failure outlives the fix. Every
+    release being a new URL makes that impossible, and leaves nothing to forget
+    to bump.
     """
     integration = await async_get_integration(hass, DOMAIN)
     version = str(integration.version or "dev")
