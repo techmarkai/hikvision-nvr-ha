@@ -11,6 +11,12 @@
 // here fetches a second, unversioned copy that a proxy may serve stale, and
 // whichever copy runs first wins customElements.define.
 
+// Served from the integration's own static path, next to this file. Home
+// Assistant will not show a brand image for a custom integration (it fetches
+// those from brands.home-assistant.io by domain), but the panel is ours to
+// decorate.
+const BRAND_ICON = new URL("icon.png", import.meta.url).href;
+
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]
@@ -56,6 +62,9 @@ class HikvisionNvrPanel extends HTMLElement {
           box-sizing: border-box;
         }
         .toolbar .title { font-size: 20px; font-weight: 400; flex: 1; }
+        .toolbar img.brand {
+          width: 28px; height: 28px; border-radius: 6px; flex: none;
+        }
         select {
           background: rgba(255,255,255,.15); color: inherit; font: inherit;
           border: 0; border-radius: 6px; padding: 6px 10px; cursor: pointer;
@@ -81,6 +90,7 @@ class HikvisionNvrPanel extends HTMLElement {
         ha-icon-button { --mdc-icon-button-size: 40px; }
       </style>
       <div class="toolbar">
+        <img class="brand" src="${BRAND_ICON}" alt="">
         <div class="title">Cameras</div>
         <select id="picker" hidden></select>
         <button id="add">Add NVR</button>
