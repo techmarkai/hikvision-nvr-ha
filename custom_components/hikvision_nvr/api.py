@@ -529,7 +529,13 @@ class ClipView(_BaseView):
             "-an",                      # see the docstring: HA/PyAV vs G.722.1
             "-c:v", "copy",             # no transcode; the NVR's bitstream as-is
             "-f", "mp4",
-            "-movflags", "frag_keyframe+empty_moov+default_base_moof",
+            # frag_keyframe alone cannot close the first fragment until the
+            # NEXT keyframe arrives, so on a long GOP the browser waits seconds
+            # for anything playable. A half-second fragment cap flushes far
+            # sooner; empty_moov lets playback begin on the first one.
+            "-movflags",
+            "frag_keyframe+empty_moov+default_base_moof+skip_sidx+skip_trailer",
+            "-frag_duration", "500000",
             "pipe:1",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
