@@ -48,32 +48,6 @@ from .isapi import AuthError, ConnectionFailed, HikvisionError, HikvisionISAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-# Readable names for the options screen. Mirrors the entity translations, which
-# the flow cannot reach.
-EVENT_LABELS = {
-    "VMD": "Motion",
-    "linedetection": "Line crossing",
-    "fielddetection": "Intrusion",
-    "tamperdetection": "Tampering",
-    "videoloss": "Video loss",
-    "facedetection": "Face detected",
-    "faceSnap": "Face captured",
-    "scenechangedetection": "Scene change",
-    "IO": "Alarm input",
-    "softIO": "Software alarm input",
-    "PIR": "PIR",
-    "regionEntrance": "Region entrance",
-    "regionExiting": "Region exit",
-    "diskfull": "Disk full",
-    "diskerror": "Disk error",
-    "nicbroken": "Network down",
-    "ipconflict": "IP conflict",
-    "illaccess": "Illegal login",
-    "recordingfailure": "Recording failure",
-    "badvideo": "Video quality problem",
-}
-
-
 async def _async_probe(hass, data: Mapping[str, Any]) -> HikvisionISAPI:
     """Connect and discover, raising the flow-facing errors."""
     api = HikvisionISAPI(
@@ -212,8 +186,7 @@ class HikvisionOptionsFlow(OptionsFlow):
                 declared |= events
         declared &= EVENT_CLASSES.keys()
         event_options = [
-            SelectOptionDict(value=event, label=EVENT_LABELS.get(event, event))
-            for event in sorted(declared, key=lambda e: EVENT_LABELS.get(e, e))
+            SelectOptionDict(value=event, label=event) for event in sorted(declared)
         ]
         default_events = current.get(
             CONF_EVENTS, sorted(declared & DEFAULT_ENABLED_EVENTS)
@@ -236,6 +209,9 @@ class HikvisionOptionsFlow(OptionsFlow):
                         options=event_options,
                         multiple=True,
                         mode=SelectSelectorMode.LIST,
+                        # Names come from strings.json, like every other
+                        # user-visible string in the integration.
+                        translation_key="event_type",
                     )
                 ),
                 vol.Required(

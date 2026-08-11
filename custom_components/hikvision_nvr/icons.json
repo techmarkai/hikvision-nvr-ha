@@ -18,17 +18,18 @@
   },
   "entity": {
     "binary_sensor": {
+      "disk_problem": "mdi:harddisk-remove",
       "facesnap": {
         "default": "mdi:account-box"
+      },
+      "illaccess": {
+        "default": "mdi:account-alert"
       },
       "io": {
         "default": "mdi:electric-switch"
       },
       "ipconflict": {
         "default": "mdi:ip-network"
-      },
-      "illaccess": {
-        "default": "mdi:account-alert"
       },
       "recordingfailure": {
         "default": "mdi:record-rec"
@@ -47,9 +48,12 @@
       "cpu_usage": {
         "default": "mdi:cpu-64-bit"
       },
+      "disk_free": "mdi:database",
+      "disk_usage": "mdi:harddisk",
       "memory_used": {
         "default": "mdi:memory"
       },
+      "online_channels": "mdi:cctv",
       "uptime": {
         "default": "mdi:clock-start"
       }

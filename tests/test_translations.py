@@ -37,8 +37,11 @@ def main() -> None:
 
     assert strings == english, "strings.json and translations/en.json have diverged"
 
+    # Entities named after something other than an event type.
+    non_event = {"connectivity", "disk_problem"}
+
     declared = set(strings["entity"]["binary_sensor"])
-    needed = {event.lower() for event in const.EVENT_CLASSES} | {"connectivity"}
+    needed = {event.lower() for event in const.EVENT_CLASSES} | non_event
     missing = needed - declared
     assert not missing, f"binary_sensor translations missing: {sorted(missing)}"
     unused = declared - needed
@@ -49,6 +52,15 @@ def main() -> None:
         if platform not in strings["entity"]:
             continue
         print(f"{platform:14}: {len(strings['entity'][platform])} keys")
+
+    # The options screen offers event types by name, from the same file. An
+    # unnamed option renders as its raw event type ("scenechangedetection").
+    offered = set(strings.get("selector", {}).get("event_type", {}).get("options", {}))
+    missing = set(const.EVENT_CLASSES) - offered
+    assert not missing, f"selector options missing names: {sorted(missing)}"
+    stray = offered - set(const.EVENT_CLASSES)
+    assert not stray, f"selector names unknown events: {sorted(stray)}"
+    print(f"selector      : {len(offered)} event names, all known")
 
     # Every event the sensible-default set names must be a real event type.
     unknown = const.DEFAULT_ENABLED_EVENTS - set(const.EVENT_CLASSES)

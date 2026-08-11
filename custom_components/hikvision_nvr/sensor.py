@@ -55,7 +55,9 @@ class _DiskSensor(HikvisionEntity, SensorEntity):
     ) -> None:
         super().__init__(coordinator)
         self._disk_id = disk_id
-        self._disk_name = disk_name or f"hdd{disk_id}"
+        # The disk's own name is data, so it goes in as a placeholder rather
+        # than being pasted into an English string here.
+        self._attr_translation_placeholders = {"disk": disk_name or f"hdd{disk_id}"}
 
     @property
     def _disk(self) -> dict | None:
@@ -72,11 +74,11 @@ class _DiskSensor(HikvisionEntity, SensorEntity):
 class HikvisionDiskUsage(_DiskSensor):
     _attr_native_unit_of_measurement = PERCENTAGE
     _attr_state_class = SensorStateClass.MEASUREMENT
+    _attr_translation_key = "disk_usage"
 
     def __init__(self, coordinator, disk_id, disk_name) -> None:
         super().__init__(coordinator, disk_id, disk_name)
         self._attr_unique_id = f"{coordinator.device_id}_disk{disk_id}_usage"
-        self._attr_name = f"{self._disk_name} usage"
 
     @property
     def native_value(self) -> float | None:
@@ -94,11 +96,11 @@ class HikvisionDiskFree(_DiskSensor):
     _attr_device_class = SensorDeviceClass.DATA_SIZE
     _attr_state_class = SensorStateClass.MEASUREMENT
     _attr_suggested_unit_of_measurement = UnitOfInformation.GIGABYTES
+    _attr_translation_key = "disk_free"
 
     def __init__(self, coordinator, disk_id, disk_name) -> None:
         super().__init__(coordinator, disk_id, disk_name)
         self._attr_unique_id = f"{coordinator.device_id}_disk{disk_id}_free"
-        self._attr_name = f"{self._disk_name} free space"
 
     @property
     def native_value(self) -> int | None:
@@ -109,7 +111,7 @@ class HikvisionDiskFree(_DiskSensor):
 class HikvisionOnlineChannels(HikvisionEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
     _attr_state_class = SensorStateClass.MEASUREMENT
-    _attr_name = "Online channels"
+    _attr_translation_key = "online_channels"
 
     def __init__(self, coordinator: HikvisionCoordinator) -> None:
         super().__init__(coordinator)

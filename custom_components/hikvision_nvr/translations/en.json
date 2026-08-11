@@ -176,6 +176,9 @@
       "connectivity": {
         "name": "Connectivity"
       },
+      "disk_problem": {
+        "name": "{disk} health"
+      },
       "diskerror": {
         "name": "Disk error"
       },
@@ -247,8 +250,17 @@
       "cpu_usage": {
         "name": "CPU usage"
       },
+      "disk_free": {
+        "name": "{disk} free space"
+      },
+      "disk_usage": {
+        "name": "{disk} usage"
+      },
       "memory_used": {
         "name": "Memory used"
+      },
+      "online_channels": {
+        "name": "Online channels"
       },
       "uptime": {
         "name": "Started at"
@@ -259,6 +271,36 @@
     "notifications_disabled": {
       "title": "Detections are recorded but not reported",
       "description": "{count} detection triggers on this NVR ({triggers}) are set to record only, with no Notify Surveillance Center linkage. The NVR will save motion clips but never tell Home Assistant, so those binary sensors stay off.\n\nRun the **Hikvision NVR: Enable event notifications** action to add the linkage. It keeps every existing action and only adds the notification."
+    }
+  },
+  "selector": {
+    "event_type": {
+      "options": {
+        "IO": "Alarm input",
+        "PIR": "PIR",
+        "VMD": "Motion",
+        "attendedBaggage": "Object left behind",
+        "badvideo": "Video quality problem",
+        "diskerror": "Disk error",
+        "diskfull": "Disk full",
+        "faceSnap": "Face captured",
+        "facedetection": "Face detected",
+        "fielddetection": "Intrusion",
+        "illaccess": "Illegal login",
+        "ipconflict": "IP conflict",
+        "linedetection": "Line crossing",
+        "nicbroken": "Network down",
+        "peopleDetection": "Person detected",
+        "recordingfailure": "Recording failure",
+        "regionEntrance": "Region entrance",
+        "regionExiting": "Region exit",
+        "scenechangedetection": "Scene change",
+        "shelteralarm": "Camera obstructed",
+        "softIO": "Software alarm input",
+        "tamperdetection": "Tampering",
+        "unattendedBaggage": "Object removed",
+        "videoloss": "Video loss"
+      }
     }
   }
 }

@@ -204,6 +204,7 @@ class HikvisionDiskProblem(HikvisionEntity, BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.PROBLEM
     _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_translation_key = "disk_problem"
 
     def __init__(
         self, coordinator: HikvisionCoordinator, disk_id: int, disk_name: str
@@ -211,7 +212,7 @@ class HikvisionDiskProblem(HikvisionEntity, BinarySensorEntity):
         super().__init__(coordinator)
         self._disk_id = disk_id
         self._attr_unique_id = f"{coordinator.device_id}_disk{disk_id}_problem"
-        self._attr_name = f"{disk_name or f'hdd{disk_id}'} health"
+        self._attr_translation_placeholders = {"disk": disk_name or f"hdd{disk_id}"}
 
     @property
     def _disk(self) -> dict | None:
