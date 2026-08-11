@@ -8,7 +8,7 @@
  * type: custom:hikvision-nvr-card
  */
 
-const CARD_VERSION = "1.4.0";
+const CARD_VERSION = "1.4.1";
 
 console.info(
   `%c HIKVISION-NVR-CARD %c ${CARD_VERSION} `,

@@ -6,7 +6,10 @@
  * page around it.
  */
 
-import "./hikvision-nvr-card.js";
+// Deliberately NOT importing the card: it is already loaded on every page by
+// add_extra_js_url, at a versioned URL. Importing "./hikvision-nvr-card.js"
+// here fetches a second, unversioned copy that a proxy may serve stale, and
+// whichever copy runs first wins customElements.define.
 
 const esc = (value) =>
   String(value ?? "").replace(/[&<>"']/g, (c) =>
@@ -143,9 +146,10 @@ class HikvisionNvrPanel extends HTMLElement {
     this._renderCard();
   }
 
-  _renderCard() {
+  async _renderCard() {
     const body = this.shadowRoot.getElementById("body");
     body.innerHTML = "";
+    await customElements.whenDefined("hikvision-nvr-card");
     const card = document.createElement("hikvision-nvr-card");
     card.setConfig({
       type: "custom:hikvision-nvr-card",
