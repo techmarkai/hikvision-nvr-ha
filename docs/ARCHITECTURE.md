@@ -103,7 +103,7 @@ same `stream` component and return the HLS endpoint. Nothing is copied, cached
 or re-encoded — seeking is a new RTSP session on the NVR, which is why it is
 fast.
 
-`api.py::_async_get_stream` keeps a small cache of running streams keyed by
+`api.py::async_get_stream` keeps a small cache of running streams keyed by
 range, cancels the idle timer on re-request, and caps concurrency at 8. Streams
 stop 5 minutes after their last use.
 
