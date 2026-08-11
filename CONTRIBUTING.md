@@ -11,7 +11,7 @@ layers above it.
 ## Before you open a pull request
 
 ```bash
-pip install ruff
+pip install -r requirements-dev.txt
 ruff check custom_components tests
 python -m compileall -q custom_components tests
 python tests/test_services.py

@@ -1,0 +1,8 @@
+# What the checks need. Home Assistant already ships aiohttp, defusedxml and
+# yarl at runtime; they are listed here because the checks import isapi.py
+# directly, without Home Assistant.
+ruff
+pyyaml
+aiohttp
+defusedxml
+yarl
