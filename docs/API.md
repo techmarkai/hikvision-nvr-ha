@@ -257,15 +257,17 @@ Plays back a time range from the NVR's disks over HLS.
   "end": "2026-08-10T00:02:15+00:00",
   "duration": 111,
   "mp4_url": "/api/hikvision_nvr/…/1/clip/1786419624/1786419735.mp4",
-  "download_url": "/api/hikvision_nvr/…/1/download?start=…&end=…",
+  "download_url": "/api/hikvision_nvr/…/1/save/1786419624/1786419735.mp4",
   "rtsp_url": "rtsp://192.168.1.10:554/Streaming/tracks/101/?starttime=20260810T000024Z&endtime=20260810T000215Z"
 }
 ```
 
-`mp4_url` and `download_url` are the same clip endpoint — play it in a `<video>`,
-or save it by pointing an `<a download>` at it.
+`mp4_url` plays; `download_url` saves. They are different endpoints on purpose:
+playing reads the NVR's playback RTSP, which starts at the exact second asked
+for, while saving pulls whole segments from the NVR's bulk endpoint at network
+speed and trims them. Playback wants precision, a download wants throughput.
 
-**Prefer `mp4_url`.** It is a fragmented MP4 remuxed live by ffmpeg: it plays in
+**Prefer `mp4_url` for playback.** It is a fragmented MP4 remuxed live by ffmpeg: it plays in
 a bare `<video>` tag, seeks natively, starts sooner than HLS, and is signable
 with `auth/sign_path` (its times are in the path, not the query). `hls_url` is
 kept for HLS-only clients, but note that Home Assistant's stream worker crashes
@@ -280,28 +282,40 @@ is what makes scrubbing feel immediate.
 
 ### `GET /api/hikvision_nvr/{device_id}/{channel}/download`
 
-The recording as a file, streamed straight off the NVR — Home Assistant never
-buffers it to disk.
+The recording as an MP4 file, as fast as the network allows.
 
 | Query | Required | Notes |
 |---|---|---|
 | `start`, `end` | yes | Max span **2 hours**. |
 
-Responds with `Content-Type: video/mp4` and a `Content-Disposition` filename
-like `Garage_entrance_20260810_000024-000215.mp4`.
+Responds with `Content-Type: video/mp4`, a `Content-Disposition` attachment
+filename like `Garage_entrance_20260810_000024.mp4`, and `404` if nothing was
+recorded in that range.
 
-> This is the NVR's own muxing, passed through untouched, and some players
-> reject it. **Prefer the clip endpoint** (`mp4_url` / `download_url`), which is
-> remuxed by ffmpeg and is what the card uses. For a strictly conformant
-> fast-start file on disk, use the `hikvision_nvr.export_recording` service.
+The bytes come from `/ISAPI/ContentMgmt/download` rather than the playback
+RTSP, which the NVR paces at real time — sixty seconds of video measured **4.5
+seconds** against a 60 second floor. ffmpeg remuxes Hikvision's IMKH container
+into MP4 without re-encoding, and trims to the range asked for: recordings come
+off the device as whole segments, so a one minute request otherwise drags the
+twenty minute segment containing it. `-c copy` snaps to a keyframe, so the
+result is the requested window give or take a GOP.
+
+### `GET /api/hikvision_nvr/{device_id}/{channel}/save/{start}/{end}.mp4`
+
+The same download, with the times as **Unix seconds in the path** so the URL
+can be signed with `auth/sign_path` and handed to an `<a download>` — which is
+what the card's save button does. `auth/sign_path` signs an empty parameter
+list, so a query-string URL cannot be signed.
 
 ---
 
 ### `GET /api/hikvision_nvr/{device_id}/{channel}/clip/{start}/{end}.mp4`
 
-The recording as a fragmented MP4, video only, streamed as ffmpeg remuxes it.
-`start` and `end` are **Unix seconds in the path** so the URL can be signed and
-handed straight to a player. Max 2 hours.
+The recording as a fragmented MP4, video only, streamed as ffmpeg remuxes it
+from the playback RTSP. This is the *playback* path: it begins at the exact
+second requested, where `/save` begins at a segment boundary. `start` and `end`
+are **Unix seconds in the path** so the URL can be signed and handed straight
+to a player. Max 2 hours.
 
 ```html
 <video src="/api/hikvision_nvr/DS-7608…/1/clip/1786419624/1786419735.mp4?authSig=…"
@@ -393,8 +407,8 @@ data: { channel: 2, pan: 30, duration: 1.5 }   # or: { channel: 2, preset: 1 }
 
 Needs an admin account on the NVR.
 
-All four take an optional `device_id` (serial, host, or config-entry id); with a
-single NVR configured it can be omitted.
+Every service takes an optional `device_id` -- the slug, serial, host, title
+or config-entry id; with a single NVR configured it can be omitted.
 
 ---
 

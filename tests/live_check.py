@@ -104,13 +104,23 @@ async def main(host: str, user: str, password: str) -> None:
         print(f"rtsp back   : {rtsp}")
         print(f"rtsp live   : {api.rtsp_url(first.id, 1, credentials=False)}")
 
+        # The whole download path, which every save and export now shares.
+        # It was silently broken once: the endpoint only accepts a playbackURI
+        # the device issued, and rejects anything constructed by hand.
+        segments = await api.async_resolve_range(
+            first.id, recordings[0].start, recordings[0].end
+        )
+        assert segments, "range resolved to no segments"
         received = 0
-        async for chunk in api.async_download_stream(recordings[0]):
+        header = b""
+        async for chunk in api.async_download_segments(segments):
+            header = header or chunk[:4]
             received += len(chunk)
             if received > 200_000:
                 break
         assert received > 100_000, "download produced almost nothing"
-        print(f"download    : {received} bytes streamed OK")
+        assert header == b"IMKH", f"unexpected container {header!r}"
+        print(f"download    : {received} bytes of {header.decode()} streamed OK")
 
         events = []
         try:

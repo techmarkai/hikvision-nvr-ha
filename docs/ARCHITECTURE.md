@@ -51,7 +51,7 @@ Everything below was confirmed against the live unit, not read from a datasheet.
 | Snapshot | `GET /ISAPI/Streaming/channels/{id}/picture` | 200, ~29 KB JPEG. |
 | Storage | `GET /ISAPI/ContentMgmt/Storage` | 2 × 2.8 TB SATA, one `Redund`, one `RW`. |
 | Recording search | `POST /ISAPI/ContentMgmt/search` | 784 segments in 24 h on channel 1. |
-| Segment download | `POST /ISAPI/ContentMgmt/download` | 200, `Opaque/data`, streams fine. |
+| Segment download | `POST /ISAPI/ContentMgmt/download` | 200, `Opaque/data`, ~1.4 MB/s. Only accepts a playbackURI the device issued. |
 | Event push | `GET /ISAPI/Event/notification/alertStream` | 200, `multipart/mixed`, live events. |
 | Live RTSP | `rtsp://…/Streaming/Channels/101` | DESCRIBE 200, **H.265**. |
 | Playback RTSP | `rtsp://…/Streaming/tracks/101/?starttime=…&endtime=…` | DESCRIBE 200, video + G.722.1 audio. |
