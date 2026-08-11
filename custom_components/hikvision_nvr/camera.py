@@ -52,6 +52,16 @@ class HikvisionCamera(HikvisionEntity, Camera):
         Camera.__init__(self)
         self._attr_unique_id = f"{coordinator.device_id}_{channel.id}_camera"
 
+        # Home Assistant defaults to RTSP over UDP with the camera's own
+        # timestamps. Hikvision encoders emit erratic DTS and drop packets under
+        # UDP, which surfaces as the stream worker dying with "No dts in N
+        # consecutive packets" on whichever channel is busiest. TCP plus
+        # wallclock timestamps is the standard remedy.
+        self.stream_options = {
+            "rtsp_transport": "tcp",
+            "use_wallclock_as_timestamps": True,
+        }
+
         wanted = entry.options.get(CONF_STREAM, STREAM_MAIN)
         # Channel 3 on the test rig has no sub-stream; never point at one that
         # does not exist or the stream just fails to start.

@@ -185,6 +185,8 @@ logger:
 |---|---|---|
 | `invalid_auth` with correct password | NVR locked the account after failed attempts | Unlock in *System → User*, wait 30 min, retry. |
 | `cannot_connect` | ISAPI disabled | Enable Hikvision-CGI in *Security → Authentication*. |
+| `No dts in N consecutive packets` in the log | RTSP over UDP with camera timestamps | Already fixed: the camera entities set `stream_options` to TCP + wallclock timestamps. |
+| One disk full, the other idle | A disk is set to `Redund` while no channel has redundant recording enabled, so it stores nothing | Set every disk to `RW` (*Storage → Storage Device → Edit*), or enable redundant recording if that is what you want. |
 | Live view black in desktop Chrome | H.265 sub-stream | Switch the channel to H.264, or put go2rtc in front. |
 | Live view fine, playback black | Recording codec is H.265 | Same fix, or use `export_recording`. |
 | Motion sensors never fire | Motion not armed on the NVR, or no *Notify Surveillance Center* linkage | Enable both per channel. |
