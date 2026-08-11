@@ -86,6 +86,15 @@ Things the firmware does that the code exists to absorb:
 Assistant's `stream` component does the RTSP → HLS work, which means go2rtc,
 WebRTC, casting and the mobile app all work with no extra code.
 
+### create_stream across versions
+`DynamicStreamSettings` has lived in `stream`, `stream.core` and now
+`camera.prefs`, and is a *required* argument to `create_stream`. On Python 3.14
+`inspect.signature` evaluates annotations (PEP 649) and blows up on Home
+Assistant's `TYPE_CHECKING`-only import of it, so `_create_stream_kwargs`
+reads parameter names off the code object and resolves the class from a list of
+candidate modules. If it ever cannot, it raises a named error rather than a
+TypeError from inside Home Assistant.
+
 ### Playback
 The NVR itself can replay a time range over RTSP
 (`/Streaming/tracks/{track}/?starttime=…&endtime=…`). We hand that URL to the

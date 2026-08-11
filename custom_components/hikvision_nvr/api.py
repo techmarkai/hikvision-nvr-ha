@@ -537,23 +537,32 @@ def _create_stream_kwargs(label: str) -> dict[str, Any]:
     if "stream_label" in params:
         kwargs["stream_label"] = label
     if "dynamic_stream_settings" in params:
+        # The class has moved across releases: camera.prefs on 2026.8, and
+        # the stream package before that. It is a required argument, so if we
+        # cannot find it, say so plainly rather than let create_stream raise a
+        # bare TypeError.
         settings = None
-        for module in ("homeassistant.components.stream.core",
-                       "homeassistant.components.stream"):
+        for module, attr in (
+            ("homeassistant.components.camera", "DynamicStreamSettings"),
+            ("homeassistant.components.camera.prefs", "DynamicStreamSettings"),
+            ("homeassistant.components.stream.core", "DynamicStreamSettings"),
+            ("homeassistant.components.stream", "DynamicStreamSettings"),
+        ):
             try:
                 settings_cls = getattr(
-                    __import__(module, fromlist=["DynamicStreamSettings"]),
-                    "DynamicStreamSettings",
+                    __import__(module, fromlist=[attr]), attr
                 )
             except (ImportError, AttributeError):
                 continue
-            # Construct with defaults: field names have churned too.
+            # Every field has a default; constructing bare survives renames.
             settings = settings_cls()
             break
         if settings is None:
-            _LOGGER.debug("DynamicStreamSettings unavailable; using stream defaults")
-        else:
-            kwargs["dynamic_stream_settings"] = settings
+            raise HikvisionError(
+                "Cannot locate DynamicStreamSettings in this Home Assistant "
+                "version; please report the Home Assistant version"
+            )
+        kwargs["dynamic_stream_settings"] = settings
     return kwargs
 
 
