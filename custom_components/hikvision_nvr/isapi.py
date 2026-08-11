@@ -232,6 +232,13 @@ class HikvisionISAPI:
         self._password = password
         self._verify_ssl = verify_ssl
         self._timeout = aiohttp.ClientTimeout(total=timeout, sock_connect=8)
+        # A streamed body has no business finishing inside the request
+        # timeout: the alert stream is meant to stay open for days, and a
+        # download runs as long as the footage is large. Bound the silence
+        # between chunks instead, which is what actually detects a dead peer.
+        self._stream_timeout = aiohttp.ClientTimeout(
+            total=None, sock_connect=8, sock_read=30
+        )
         self._digest = _Digest(username, password)
         self._auth_mode: str | None = None
         self._lock = asyncio.Lock()
@@ -281,7 +288,7 @@ class HikvisionISAPI:
                 url,
                 data=data,
                 headers=hdrs,
-                timeout=self._timeout,
+                timeout=self._stream_timeout if stream else self._timeout,
                 ssl=self._ssl,
             )
 
@@ -663,11 +670,57 @@ class HikvisionISAPI:
 
         return found[:max_results], total
 
-    async def async_download_stream(
-        self, recording: Recording | str, chunk_size: int = 65536
+    async def async_resolve_range(
+        self, channel: int, start: datetime, end: datetime, max_segments: int = 200
+    ) -> list[Recording]:
+        """The recorded segments covering a time range.
+
+        The bulk download endpoint only accepts a playbackURI the device issued
+        itself, complete with its own name and size parameters, so a range has
+        to be turned into real segments before anything can be fetched.
+        """
+        recordings, _ = await self.async_search_recordings(
+            channel, start, end, max_results=max_segments
+        )
+        return recordings
+
+    async def async_download_segments(
+        self, recordings: list[Recording]
     ) -> AsyncIterator[bytes]:
-        """Stream a recorded segment out of the NVR as raw bytes."""
-        uri = recording if isinstance(recording, str) else recording.playback_uri
+        """Fetch whole segments, back to back.
+
+        This is the fast way off the device: /ISAPI/ContentMgmt/download hands
+        over recorded video as quickly as the network allows, where reading the
+        playback RTSP is paced at real time -- a minute of video takes a minute.
+
+        Segments come whole, so this yields everything from the start of the
+        first to the end of the last; a caller wanting exactly the range it
+        asked for trims what it writes. What arrives is Hikvision's IMKH
+        container, not MP4: callers remux.
+        """
+        for recording in recordings:
+            # This firmware occasionally drops a download after the response
+            # headers, then serves the same segment perfectly on a second ask.
+            # Only retry while nothing has been handed to the caller: bytes
+            # already yielded cannot be taken back, and repeating them would
+            # corrupt the file.
+            sent = 0
+            try:
+                async for chunk in self.async_download_stream(recording):
+                    sent += len(chunk)
+                    yield chunk
+            except HikvisionError as err:
+                if sent:
+                    raise
+                _LOGGER.debug("Retrying segment at %s: %s", recording.start, err)
+                async for chunk in self.async_download_stream(recording):
+                    yield chunk
+
+    async def async_download_stream(
+        self, recording: Recording, chunk_size: int = 65536
+    ) -> AsyncIterator[bytes]:
+        """Stream one recorded segment out of the NVR as raw bytes."""
+        uri = recording.playback_uri
         body = (
             '<?xml version="1.0" encoding="utf-8"?>'
             '<downloadRequest version="1.0" '
@@ -681,6 +734,10 @@ class HikvisionISAPI:
         try:
             async for chunk in response.content.iter_chunked(chunk_size):
                 yield chunk
+        except aiohttp.ClientError as err:
+            # Otherwise a truncated transfer escapes as a raw aiohttp error,
+            # past every caller that only knows about HikvisionError.
+            raise HikvisionError(f"Download was cut short: {err}") from err
         finally:
             response.release()
 

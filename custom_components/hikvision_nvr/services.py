@@ -158,36 +158,68 @@ def async_setup_services(hass: HomeAssistant) -> None:
         if not hass.config.is_allowed_path(str(target.parent.parent)):
             raise ServiceValidationError(f"{media_dir} is not an allowed path")
 
-        source = coordinator.api.playback_rtsp_url(channel, start, end)
         await hass.async_add_executor_job(
             lambda: target.parent.mkdir(parents=True, exist_ok=True)
         )
 
         from homeassistant.components.ffmpeg import get_ffmpeg_manager
 
-        binary = get_ffmpeg_manager(hass).binary
+        # Fed from the NVR's bulk endpoint rather than its playback RTSP, which
+        # is paced at real time -- exporting an hour used to take an hour.
+        recordings = await coordinator.api.async_resolve_range(channel, start, end)
+        if not recordings:
+            raise ServiceValidationError("Nothing was recorded in that range")
+        # Segments arrive whole, so cut back to what was asked for.
+        offset = max(0.0, (start - recordings[0].start).total_seconds())
         process = await asyncio.create_subprocess_exec(
-            binary,
+            get_ffmpeg_manager(hass).binary,
             "-hide_banner",
             "-loglevel", "error",
-            "-rtsp_transport", "tcp",
-            "-i", source,
+            "-i", "pipe:0",
             # G.722.1 has no valid MP4 mapping and PyAV/ffmpeg choke on it;
             # video only keeps the export universally playable.
             "-an",
             "-c:v", "copy",
+            "-ss", f"{offset:.3f}",
+            "-t", f"{(end - start).total_seconds():.3f}",
             "-movflags", "+faststart",
             "-y", str(target),
+            stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
-        # An export can only ever be as long as the clip; +60s covers handshake.
+
+        async def feed() -> None:
+            try:
+                async for chunk in coordinator.api.async_download_segments(
+                    recordings
+                ):
+                    process.stdin.write(chunk)
+                    await process.stdin.drain()
+            except (ConnectionResetError, BrokenPipeError):
+                # Normal: -t makes ffmpeg stop once it has the requested
+                # duration, well before the last segment has been sent.
+                pass
+            finally:
+                if process.stdin and not process.stdin.is_closing():
+                    process.stdin.close()
+
+        pump = asyncio.ensure_future(feed())
+        # The fetch runs at network speed now, but leave a long range room.
         timeout = (end - start).total_seconds() + 60
         try:
             _, stderr = await asyncio.wait_for(process.communicate(), timeout)
         except TimeoutError:
             process.kill()
+            pump.cancel()
             raise HomeAssistantError("Export timed out") from None
+
+        # A failure fetching from the NVR closes ffmpeg's input, so ffmpeg
+        # reports a truncated file. Report what actually went wrong instead.
+        if not pump.done():
+            pump.cancel()
+        elif (err := pump.exception()) is not None:
+            raise HomeAssistantError(f"Export failed: {err}") from err
         if process.returncode != 0:
             raise HomeAssistantError(
                 f"ffmpeg failed: {stderr.decode(errors='replace')[:400]}"
