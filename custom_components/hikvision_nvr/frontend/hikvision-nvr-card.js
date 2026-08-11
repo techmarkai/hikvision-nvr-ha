@@ -787,12 +787,15 @@ class HikvisionNvrCard extends HTMLElement {
       const stateObj = this._hass.states[channel.entity_id];
       if (stateObj) {
         const element = document.createElement("ha-camera-stream");
+        // Attach before assigning: this is a Lit element, and properties set
+        // while it is still detached are dropped on upgrade -- which rendered
+        // an empty component and a black stage.
+        stage.appendChild(element);
         element.hass = this._hass;
         element.stateObj = stateObj;
         element.muted = true;
         element.controls = false;
         element.allowExoPlayer = true;
-        stage.appendChild(element);
         return;
       }
     }
