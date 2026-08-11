@@ -147,6 +147,46 @@ card defaults to the sub-stream. Setting **Live quality** to the main stream on
 an H.265 channel would ask it to transcode 2560x1440, which has not been
 measured and should be before anyone recommends it.
 
+### Playback seek latency: where the time actually goes
+
+Measured at the RTSP layer, with no ffmpeg involved:
+
+| Operation | Time |
+|---|---|
+| `DESCRIBE` on a **live** URL | 92 ms |
+| `DESCRIBE` on a **playback** URL (a seek) | **2117-2902 ms** |
+| `SETUP` + `PLAY` after that | ~50-60 ms |
+| `PLAY` with a new `Range` on an **already open** session | **48, 79, 80 ms** |
+
+So a seek costs what it costs because the NVR spends two to three seconds
+answering the first `DESCRIBE` for a time range -- locating footage on disk.
+Our whole pipeline adds about half a second on top: clip time-to-first-byte is
+2.60-2.87s against a 2.12s `DESCRIBE` for the same range.
+
+Two consequences worth knowing before optimising further:
+
+* **Nothing on our side can fix a 2.9s `DESCRIBE`.** ffmpeg flags, proxy hops
+  and round trips are noise beside it.
+* **Re-seeking inside an open session is ~35x faster** (50-80ms). Exploiting
+  that means holding RTSP sessions server-side and re-issuing `PLAY` with a new
+  `Range`, then depacketising RTP to fMP4 ourselves -- ffmpeg cannot be
+  re-seeked mid-stream. That is go2rtc-class machinery and was not attempted.
+
+Older footage is markedly slower to locate: a clip from 20 hours ago took
+14.9s to first byte against 2.6s for one from 4 hours ago. Same code, same
+range length.
+
+**Tried and reverted: `-frag_duration 500000`.** The theory was sound --
+`frag_keyframe` cannot close a fragment until the next keyframe arrives, and
+these are 2560x1440 recordings with a long GOP. In practice it made things
+worse: no decodable frame within 30s, against 22.8s before. A timed fragment
+can open mid-GOP, and a browser cannot start decoding a fragment that does not
+begin on a keyframe.
+
+Playback also has no lighter option available: `/ISAPI/ContentMgmt/record/tracks`
+reports 8 tracks, one per channel, all main-stream. There is no sub-stream
+recording to play back instead of 1440p H.265.
+
 ### Why playback does not use the stream component
 These NVRs record a **G.722.1** audio track. PyAV cannot name that codec, so
 Home Assistant's `stream/worker.py` dies with `'AudioStream' object has no
