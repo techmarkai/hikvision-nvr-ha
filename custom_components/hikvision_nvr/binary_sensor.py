@@ -12,14 +12,20 @@ from homeassistant.helpers.dispatcher import async_dispatcher_connect
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from homeassistant.helpers.event import async_call_later
 
-from .const import CONF_CHANNELS, EVENT_AUTO_OFF, EVENT_CLASSES, SIGNAL_EVENT
+from .const import (
+    CONF_CHANNELS,
+    DEFAULT_ENABLED_EVENTS,
+    EVENT_AUTO_OFF,
+    EVENT_CLASSES,
+    SIGNAL_EVENT,
+)
 from .coordinator import HikvisionConfigEntry, HikvisionCoordinator
 from .entity import HikvisionEntity
 from .isapi import Channel, Event
 
-# Per channel we always create motion; the rest appear only when the device
-# actually emits them, so we do not litter the registry with 8x20 dead entities.
-BASE_EVENTS = ("VMD",)
+# Used only when the device does not expose /ISAPI/Event/triggers, so that
+# motion still works on firmwares that declare nothing.
+FALLBACK_EVENTS = frozenset({"VMD"})
 
 
 async def async_setup_entry(
@@ -37,11 +43,22 @@ async def async_setup_entry(
 
     known: set[tuple[int, str]] = set()
     entities: list[BinarySensorEntity] = []
+
     for channel in channels.values():
         entities.append(HikvisionChannelOnline(coordinator, channel))
-        for event_type in BASE_EVENTS:
+        for event_type in sorted(
+            (channel.events & EVENT_CLASSES.keys()) or FALLBACK_EVENTS
+        ):
             known.add((channel.id, event_type))
             entities.append(HikvisionBinarySensor(coordinator, channel, event_type))
+
+    # Channel 0 is the NVR itself: disk, network, recording failures.
+    for event_type in sorted(
+        coordinator.api.event_capabilities.get(0, set()) & EVENT_CLASSES.keys()
+    ):
+        known.add((0, event_type))
+        entities.append(HikvisionBinarySensor(coordinator, None, event_type))
+
     async_add_entities(entities)
 
     @callback
@@ -80,11 +97,19 @@ class HikvisionBinarySensor(HikvisionEntity, BinarySensorEntity):
         self._attr_unique_id = (
             f"{coordinator.device_id}_{self._channel_id}_{event_type}"
         )
+        # Naming comes from translations, so the entity reads "Line crossing"
+        # rather than "Linedetection".
         self._attr_translation_key = event_type.lower()
-        self._attr_name = event_type.replace("detection", " detection").title()
         device_class = EVENT_CLASSES.get(event_type)
         if device_class:
             self._attr_device_class = BinarySensorDeviceClass(device_class)
+        # A capable device declares a lot. Create everything it can do, but only
+        # switch on the ones most people want, so the entity list stays usable.
+        self._attr_entity_registry_enabled_default = (
+            event_type in DEFAULT_ENABLED_EVENTS or channel is None
+        )
+        if channel is None:
+            self._attr_entity_category = EntityCategory.DIAGNOSTIC
 
     @property
     def is_on(self) -> bool:
@@ -125,7 +150,7 @@ class HikvisionChannelOnline(HikvisionEntity, BinarySensorEntity):
 
     _attr_device_class = BinarySensorDeviceClass.CONNECTIVITY
     _attr_entity_category = EntityCategory.DIAGNOSTIC
-    _attr_name = "Connectivity"
+    _attr_translation_key = "connectivity"
 
     def __init__(self, coordinator: HikvisionCoordinator, channel: Channel) -> None:
         super().__init__(coordinator, channel)

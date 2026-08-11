@@ -52,24 +52,48 @@
           "name": "NVR",
           "description": "Serial, host, or config entry id. Optional with a single NVR."
         },
-        "channel": { "name": "Channel", "description": "Camera channel number." },
-        "start_time": { "name": "Start", "description": "Defaults to 24 hours ago." },
-        "end_time": { "name": "End", "description": "Defaults to now." },
+        "channel": {
+          "name": "Channel",
+          "description": "Camera channel number."
+        },
+        "start_time": {
+          "name": "Start",
+          "description": "Defaults to 24 hours ago."
+        },
+        "end_time": {
+          "name": "End",
+          "description": "Defaults to now."
+        },
         "event_type": {
           "name": "Event type",
           "description": "Only return segments of this type, e.g. motion."
         },
-        "limit": { "name": "Limit", "description": "Maximum segments to return." }
+        "limit": {
+          "name": "Limit",
+          "description": "Maximum segments to return."
+        }
       }
     },
     "export_recording": {
       "name": "Export recording",
       "description": "Copy a time range from the NVR into an MP4 under your media folder.",
       "fields": {
-        "device_id": { "name": "NVR", "description": "Serial, host, or config entry id." },
-        "channel": { "name": "Channel", "description": "Camera channel number." },
-        "start_time": { "name": "Start", "description": "Start of the range." },
-        "end_time": { "name": "End", "description": "End of the range. Max 2 hours." },
+        "device_id": {
+          "name": "NVR",
+          "description": "Serial, host, or config entry id."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Camera channel number."
+        },
+        "start_time": {
+          "name": "Start",
+          "description": "Start of the range."
+        },
+        "end_time": {
+          "name": "End",
+          "description": "End of the range. Max 2 hours."
+        },
         "filename": {
           "name": "Filename",
           "description": "File name only, no path. Defaults to a timestamped name."
@@ -80,39 +104,124 @@
       "name": "PTZ",
       "description": "Move a PTZ camera, or send it to a preset.",
       "fields": {
-        "device_id": { "name": "NVR", "description": "Serial, host, or config entry id." },
-        "channel": { "name": "Channel", "description": "Camera channel number." },
-        "pan": { "name": "Pan", "description": "-100 to 100." },
-        "tilt": { "name": "Tilt", "description": "-100 to 100." },
-        "zoom": { "name": "Zoom", "description": "-100 to 100." },
-        "preset": { "name": "Preset", "description": "Go to this preset instead of moving." },
-        "duration": { "name": "Duration", "description": "How long to move before stopping." }
+        "device_id": {
+          "name": "NVR",
+          "description": "Serial, host, or config entry id."
+        },
+        "channel": {
+          "name": "Channel",
+          "description": "Camera channel number."
+        },
+        "pan": {
+          "name": "Pan",
+          "description": "-100 to 100."
+        },
+        "tilt": {
+          "name": "Tilt",
+          "description": "-100 to 100."
+        },
+        "zoom": {
+          "name": "Zoom",
+          "description": "-100 to 100."
+        },
+        "preset": {
+          "name": "Preset",
+          "description": "Go to this preset instead of moving."
+        },
+        "duration": {
+          "name": "Duration",
+          "description": "How long to move before stopping."
+        }
       }
     },
     "reboot": {
       "name": "Reboot",
       "description": "Reboot the NVR. Requires an admin account.",
       "fields": {
-        "device_id": { "name": "NVR", "description": "Serial, host, or config entry id." }
+        "device_id": {
+          "name": "NVR",
+          "description": "Serial, host, or config entry id."
+        }
       }
     }
   },
   "entity": {
     "binary_sensor": {
-      "vmd": { "name": "Motion" },
-      "linedetection": { "name": "Line crossing" },
-      "fielddetection": { "name": "Intrusion" },
-      "facedetection": { "name": "Face detected" },
-      "videoloss": { "name": "Video loss" },
-      "tamperdetection": { "name": "Tampering" },
-      "shelteralarm": { "name": "Camera covered" },
-      "diskfull": { "name": "Disk full" },
-      "diskerror": { "name": "Disk error" },
-      "nicbroken": { "name": "Network down" },
-      "ipconflict": { "name": "IP conflict" },
-      "illaccess": { "name": "Illegal login" },
-      "pir": { "name": "PIR" },
-      "io": { "name": "Alarm input" }
+      "attendedbaggage": {
+        "name": "Object taken"
+      },
+      "badvideo": {
+        "name": "Video quality problem"
+      },
+      "connectivity": {
+        "name": "Connectivity"
+      },
+      "diskerror": {
+        "name": "Disk error"
+      },
+      "diskfull": {
+        "name": "Disk full"
+      },
+      "facedetection": {
+        "name": "Face detected"
+      },
+      "facesnap": {
+        "name": "Face captured"
+      },
+      "fielddetection": {
+        "name": "Intrusion"
+      },
+      "illaccess": {
+        "name": "Illegal login"
+      },
+      "io": {
+        "name": "Alarm input"
+      },
+      "ipconflict": {
+        "name": "IP conflict"
+      },
+      "linedetection": {
+        "name": "Line crossing"
+      },
+      "nicbroken": {
+        "name": "Network down"
+      },
+      "peopledetection": {
+        "name": "Person detected"
+      },
+      "pir": {
+        "name": "PIR"
+      },
+      "recordingfailure": {
+        "name": "Recording failure"
+      },
+      "regionentrance": {
+        "name": "Region entrance"
+      },
+      "regionexiting": {
+        "name": "Region exit"
+      },
+      "scenechangedetection": {
+        "name": "Scene change"
+      },
+      "shelteralarm": {
+        "name": "Camera covered"
+      },
+      "softio": {
+        "name": "Software alarm input"
+      },
+      "tamperdetection": {
+        "name": "Tampering"
+      },
+      "unattendedbaggage": {
+        "name": "Object left behind"
+      },
+      "videoloss": {
+        "name": "Video loss"
+      },
+      "vmd": {
+        "name": "Motion"
+      }
     }
   }
 }
