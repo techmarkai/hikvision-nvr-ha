@@ -13,10 +13,12 @@ import hashlib
 import logging
 import os
 import re
+from base64 import b64encode
 from collections.abc import AsyncIterator
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
+from urllib.parse import quote
 from xml.etree import ElementTree as ET
 
 import aiohttp
@@ -83,15 +85,6 @@ class Channel:
     # Most channels have no microphone; only offer audio where there is some.
     has_audio: bool = False
     audio_codec: str | None = None
-
-    @property
-    def track_id(self) -> int:
-        """Recording track id used by the search/playback APIs."""
-        return self.id * 100 + 1
-
-    def stream_id(self, stream: int) -> int:
-        """Streaming channel id, e.g. channel 3 sub-stream -> 302."""
-        return self.id * 100 + stream
 
 
 @dataclass(slots=True)
@@ -258,9 +251,7 @@ class HikvisionISAPI:
         return None if not self.use_ssl else self._verify_ssl
 
     def _basic_header(self) -> str:
-        import base64
-
-        token = base64.b64encode(f"{self._user}:{self._password}".encode()).decode()
+        token = b64encode(f"{self._user}:{self._password}".encode()).decode()
         return f"Basic {token}"
 
     async def request(
@@ -545,15 +536,16 @@ class HikvisionISAPI:
 
     # ---------------------------------------------------------------- media
 
-    def rtsp_url(self, channel: int, stream: int = 1, credentials: bool = True) -> str:
-        """Live RTSP URL for a channel."""
+    def _rtsp_root(self, credentials: bool) -> str:
         auth = ""
         if credentials:
-            from urllib.parse import quote
-
             auth = f"{quote(self._user, safe='')}:{quote(self._password, safe='')}@"
+        return f"rtsp://{auth}{self.host}:{self.rtsp_port}"
+
+    def rtsp_url(self, channel: int, stream: int = 1, credentials: bool = True) -> str:
+        """Live RTSP URL for a channel."""
         return (
-            f"rtsp://{auth}{self.host}:{self.rtsp_port}"
+            f"{self._rtsp_root(credentials)}"
             f"/Streaming/Channels/{channel * 100 + stream}"
         )
 
@@ -561,32 +553,33 @@ class HikvisionISAPI:
         self, channel: int, start: datetime, end: datetime, credentials: bool = True
     ) -> str:
         """RTSP URL that replays a time range from the NVR's disks."""
-        auth = ""
-        if credentials:
-            from urllib.parse import quote
-
-            auth = f"{quote(self._user, safe='')}:{quote(self._password, safe='')}@"
         fmt = "%Y%m%dT%H%M%SZ"
         start_s = start.astimezone(UTC).strftime(fmt)
         end_s = end.astimezone(UTC).strftime(fmt)
         return (
-            f"rtsp://{auth}{self.host}:{self.rtsp_port}"
+            f"{self._rtsp_root(credentials)}"
             f"/Streaming/tracks/{channel * 100 + 1}"
             f"/?starttime={start_s}&endtime={end_s}"
         )
 
     async def async_snapshot(self, channel: int, stream: int = 2) -> bytes:
-        """JPEG still. Sub-stream by default -- an order of magnitude faster."""
+        """JPEG still. Sub-stream by default -- an order of magnitude faster.
+
+        Either stream can refuse: a channel without a sub-stream 404s, and this
+        firmware answers 500 for the main stream on some channels while the sub
+        stream works. So fall back in whichever direction is needed rather than
+        only sub to main.
+        """
+        alternate = 1 if stream != 1 else 2
         try:
             return await self.get_bytes(
                 f"/ISAPI/Streaming/channels/{channel * 100 + stream}/picture"
             )
-        except HikvisionError:
-            if stream != 1:
-                return await self.get_bytes(
-                    f"/ISAPI/Streaming/channels/{channel * 100 + 1}/picture"
-                )
-            raise
+        except HikvisionError as err:
+            _LOGGER.debug("Snapshot stream %s failed on channel %s: %s", stream, channel, err)
+            return await self.get_bytes(
+                f"/ISAPI/Streaming/channels/{channel * 100 + alternate}/picture"
+            )
 
     # ------------------------------------------------------------- playback
 

@@ -63,8 +63,8 @@ class HikvisionCamera(HikvisionEntity, Camera):
         }
 
         wanted = entry.options.get(CONF_STREAM, STREAM_MAIN)
-        # Channel 3 on the test rig has no sub-stream; never point at one that
-        # does not exist or the stream just fails to start.
+        # Not every channel has a sub-stream; never point at one that does
+        # not exist or the stream simply fails to start.
         self._stream = wanted if wanted in channel.streams else channel.streams[0]
         snapshot = entry.options.get(CONF_SNAPSHOT_STREAM, STREAM_SUB)
         self._snapshot_stream = (

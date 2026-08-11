@@ -17,7 +17,6 @@ CONF_EVENTS = "events"
 DEFAULT_PORT = 80
 DEFAULT_SSL_PORT = 443
 DEFAULT_RTSP_PORT = 554
-DEFAULT_TIMEOUT = 15
 
 # 1 = main stream (quality), 2 = sub stream (fast/low bandwidth).
 STREAM_MAIN = 1
