@@ -143,6 +143,24 @@
           "description": "Serial, host, or config entry id."
         }
       }
+    },
+    "enable_notifications": {
+      "name": "Enable event notifications",
+      "description": "Tell the NVR to announce its events, not just record them. A trigger set to record only fills the disk while Home Assistant never sees the event. Existing actions are kept; this only adds Notify Surveillance Center.",
+      "fields": {
+        "device_id": {
+          "name": "NVR",
+          "description": "Serial, host, or config entry id."
+        },
+        "event_type": {
+          "name": "Event types",
+          "description": "Limit to these event types. Defaults to all of them."
+        },
+        "channel": {
+          "name": "Channels",
+          "description": "Limit to these channels. Defaults to all of them."
+        }
+      }
     }
   },
   "entity": {

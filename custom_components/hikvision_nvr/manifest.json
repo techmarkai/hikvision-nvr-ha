@@ -1,7 +1,7 @@
 {
   "domain": "hikvision_nvr",
   "name": "Hikvision NVR",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "documentation": "https://github.com/techmarkai/hikvision-nvr-ha",
   "issue_tracker": "https://github.com/techmarkai/hikvision-nvr-ha/issues",
   "codeowners": [
@@ -17,7 +17,8 @@
     "ffmpeg"
   ],
   "after_dependencies": [
-    "media_source"
+    "media_source",
+    "lovelace"
   ],
   "requirements": [],
   "quality_scale": "platinum"

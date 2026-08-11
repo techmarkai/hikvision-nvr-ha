@@ -110,3 +110,26 @@ reboot:
     device_id:
       selector:
         text:
+
+enable_notifications:
+  fields:
+    device_id:
+      selector:
+        text:
+    event_type:
+      example: VMD
+      selector:
+        select:
+          multiple: true
+          custom_value: true
+          options:
+            - VMD
+            - linedetection
+            - fielddetection
+            - tamperdetection
+            - facedetection
+    channel:
+      example: "[1, 2]"
+      selector:
+        text:
+          multiple: true

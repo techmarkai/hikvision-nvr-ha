@@ -100,6 +100,24 @@ the recording or sub-stream codec to **H.264** on the NVR for universal
 playback, or put go2rtc in front to transcode. `export_recording` produces a
 plain MP4 that plays everywhere either way.
 
+## Motion sensors staying off
+
+A Hikvision trigger can record, notify, both, or neither — and "record only" is
+a common factory default. A channel set that way fills the disk with motion
+clips while Home Assistant never hears a thing, because only *Notify
+Surveillance Center* pushes an event to the alert stream this integration
+listens on.
+
+Check with the service, which reports what it changed:
+
+```yaml
+action: hikvision_nvr.enable_notifications
+response_variable: result      # {"changed": ["VMD-1", ...], "count": 8}
+```
+
+It only ever adds the notification; recording and every other linkage is left
+exactly as it was. Narrow it with `event_type:` and `channel:` if you want.
+
 ## Branding
 
 The mark in `brand/` is original artwork for this project, not the Hikvision
@@ -114,6 +132,10 @@ into core, that is where its brand image would go.
 
 To use your own artwork, replace `brand/icon.svg` and run `python brand/render.py`,
 or simply drop your own `brand/icon.png` and `brand/logo.png` in place.
+
+Ready-to-submit assets and instructions for getting the icon onto the
+integration page live in
+[`brand/home-assistant-brands/`](brand/home-assistant-brands/README.md).
 
 ## Licence
 

@@ -25,6 +25,7 @@ from .const import (
     ATTR_END,
     ATTR_START,
     DOMAIN,
+    SERVICE_ENABLE_NOTIFICATIONS,
     SERVICE_EXPORT_RECORDING,
     SERVICE_PTZ,
     SERVICE_REBOOT,
@@ -80,6 +81,16 @@ PTZ_SCHEMA = vol.Schema(
 )
 
 REBOOT_SCHEMA = vol.Schema({vol.Optional(ATTR_DEVICE_ID): cv.string})
+
+NOTIFICATIONS_SCHEMA = vol.Schema(
+    {
+        vol.Optional(ATTR_DEVICE_ID): cv.string,
+        vol.Optional(ATTR_EVENT_TYPE): vol.All(cv.ensure_list, [cv.string]),
+        vol.Optional(ATTR_CHANNEL): vol.All(
+            cv.ensure_list, [vol.All(vol.Coerce(int), vol.Range(min=1, max=64))]
+        ),
+    }
+)
 
 
 def _resolve(hass: HomeAssistant, device_id: str | None) -> HikvisionCoordinator:
@@ -220,6 +231,24 @@ def async_setup_services(hass: HomeAssistant) -> None:
         except HikvisionError as err:
             raise HomeAssistantError(f"PTZ failed: {err}") from err
 
+    async def enable_notifications(call: ServiceCall) -> ServiceResponse:
+        coordinator = _resolve(hass, call.data.get(ATTR_DEVICE_ID))
+        try:
+            changed = await coordinator.api.async_enable_notifications(
+                event_types=set(call.data[ATTR_EVENT_TYPE])
+                if call.data.get(ATTR_EVENT_TYPE)
+                else None,
+                channels=set(call.data[ATTR_CHANNEL])
+                if call.data.get(ATTR_CHANNEL)
+                else None,
+            )
+        except HikvisionError as err:
+            raise HomeAssistantError(f"Could not enable notifications: {err}") from err
+        # Capabilities are unchanged, but a trigger that can now report may
+        # deserve an entity, so refresh what we know.
+        await coordinator.api.async_update_capabilities()
+        return {"changed": changed, "count": len(changed)}
+
     async def reboot(call: ServiceCall) -> None:
         coordinator = _resolve(hass, call.data.get(ATTR_DEVICE_ID))
         try:
@@ -236,12 +265,20 @@ def async_setup_services(hass: HomeAssistant) -> None:
     )
     hass.services.async_register(
         DOMAIN,
-        SERVICE_EXPORT_RECORDING,
+        SERVICE_ENABLE_NOTIFICATIONS,
+    SERVICE_EXPORT_RECORDING,
         export,
         schema=EXPORT_SCHEMA,
         supports_response=SupportsResponse.OPTIONAL,
     )
     hass.services.async_register(DOMAIN, SERVICE_PTZ, ptz, schema=PTZ_SCHEMA)
+    hass.services.async_register(
+        DOMAIN,
+        SERVICE_ENABLE_NOTIFICATIONS,
+        enable_notifications,
+        schema=NOTIFICATIONS_SCHEMA,
+        supports_response=SupportsResponse.OPTIONAL,
+    )
     hass.services.async_register(
         DOMAIN, SERVICE_REBOOT, reboot, schema=REBOOT_SCHEMA
     )

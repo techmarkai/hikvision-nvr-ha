@@ -13,6 +13,7 @@ from pathlib import Path
 from homeassistant.components.frontend import add_extra_js_url, async_register_built_in_panel
 from homeassistant.components.http import StaticPathConfig
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.start import async_at_started
 
 from .const import DOMAIN
 
@@ -44,6 +45,9 @@ async def async_setup_frontend(hass: HomeAssistant) -> None:
     # Loads the card on every dashboard, so `type: custom:hikvision-nvr-card`
     # just works without a Resources entry.
     add_extra_js_url(hass, CARD_URL)
+    # Lovelace may not be set up yet -- we run during async_setup. Wait for
+    # start, so the resource lands whatever the component ordering.
+    async_at_started(hass, _async_register_lovelace_resource)
 
     async_register_built_in_panel(
         hass,
@@ -62,3 +66,41 @@ async def async_setup_frontend(hass: HomeAssistant) -> None:
         },
     )
     _LOGGER.debug("Hikvision NVR frontend registered at %s", URL_BASE)
+
+
+async def _async_register_lovelace_resource(hass: HomeAssistant) -> None:
+    """Also register the card as a Lovelace resource.
+
+    add_extra_js_url injects a script tag into the frontend's index.html, which
+    the companion app caches hard -- so on mobile the card can be missing while
+    it works in a browser. Lovelace resources are delivered over the websocket
+    instead, so they reach a client running a stale index. Belt and braces: the
+    module is fetched once either way, and its customElements.define is
+    guarded.
+    """
+    lovelace = hass.data.get("lovelace")
+    resources = getattr(lovelace, "resources", None)
+    if resources is None:
+        return  # Lovelace not set up (or YAML mode with none defined)
+    if not hasattr(resources, "async_create_item"):
+        _LOGGER.debug("Lovelace is in YAML mode; add the card resource yourself")
+        return
+
+    try:
+        if not getattr(resources, "loaded", True):
+            await resources.async_load()
+            resources.loaded = True
+
+        stem = CARD_URL.split("?")[0]
+        for item in resources.async_items():
+            if item.get("url", "").split("?")[0] != stem:
+                continue
+            if item["url"] == CARD_URL:
+                return  # already current
+            # Same card, older version: point it at the new one.
+            await resources.async_update_item(item["id"], {"url": CARD_URL})
+            return
+        await resources.async_create_item({"res_type": "module", "url": CARD_URL})
+        _LOGGER.debug("Registered %s as a Lovelace resource", CARD_URL)
+    except Exception as err:  # noqa: BLE001 - never block setup over a resource
+        _LOGGER.debug("Could not register the Lovelace resource: %s", err)

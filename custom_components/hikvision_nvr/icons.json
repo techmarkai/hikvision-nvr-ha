@@ -11,6 +11,9 @@
     },
     "reboot": {
       "service": "mdi:restart"
+    },
+    "enable_notifications": {
+      "service": "mdi:bell-ring"
     }
   },
   "entity": {

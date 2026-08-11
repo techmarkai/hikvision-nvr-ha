@@ -753,5 +753,76 @@ class HikvisionISAPI:
             "PUT", f"/ISAPI/PTZCtrl/channels/{channel}/presets/{preset}/goto"
         )
 
+    async def async_enable_notifications(
+        self, event_types: set[str] | None = None, channels: set[int] | None = None
+    ) -> list[str]:
+        """Make the device announce its events, not just record them.
+
+        A Hikvision trigger can be linked to several actions. "record" starts a
+        recording; "center" (Notify Surveillance Center) is the one that pushes
+        the event to the alert stream we listen on. A channel set to record only
+        will fill the disk with motion clips while Home Assistant never sees a
+        thing -- which is the default on many installs.
+
+        Existing notifications are preserved; this only ever adds "center".
+        Returns the triggers that were changed.
+        """
+        changed: list[str] = []
+        root = await self.get_xml("/ISAPI/Event/triggers")
+        for node in root.findall("EventTrigger"):
+            trigger_id = _text(node, "id")
+            event_type = EVENT_ALIASES.get(
+                _text(node, "eventType"), _text(node, "eventType")
+            )
+            if event_types and event_type not in event_types:
+                continue
+            suffix = re.search(r"-(\d+)$", trigger_id)
+            channel = int(suffix.group(1)) if suffix else 0
+            if channels and channel not in channels:
+                continue
+
+            methods = [
+                _text(n, "notificationMethod")
+                for n in node.findall(
+                    "EventTriggerNotificationList/EventTriggerNotification"
+                )
+            ]
+            if "center" in methods:
+                continue
+
+            existing = "".join(
+                f"<EventTriggerNotification><id>{_text(n, 'id')}</id>"
+                f"<notificationMethod>{_text(n, 'notificationMethod')}</notificationMethod>"
+                "</EventTriggerNotification>"
+                for n in node.findall(
+                    "EventTriggerNotificationList/EventTriggerNotification"
+                )
+            )
+            body = (
+                '<?xml version="1.0" encoding="UTF-8"?>'
+                '<EventTriggerNotificationList version="2.0" '
+                'xmlns="http://www.isapi.org/ver20/XMLSchema">'
+                f"{existing}"
+                f"<EventTriggerNotification><id>center-{channel or 1}</id>"
+                "<notificationMethod>center</notificationMethod>"
+                "<notificationRecurrence>beginningandend</notificationRecurrence>"
+                "</EventTriggerNotification>"
+                "</EventTriggerNotificationList>"
+            )
+            try:
+                await self.request(
+                    "PUT",
+                    f"/ISAPI/Event/triggers/{trigger_id}/notifications",
+                    data=body,
+                )
+            except HikvisionError as err:
+                _LOGGER.warning("Could not enable notifications on %s: %s", trigger_id, err)
+                continue
+            changed.append(trigger_id)
+
+        if changed:
+            _LOGGER.info("Enabled event notifications on: %s", ", ".join(changed))
+        return changed
+
     async def async_reboot(self) -> None:
         await self.request("PUT", "/ISAPI/System/reboot")
